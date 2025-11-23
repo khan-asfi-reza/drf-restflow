@@ -1,0 +1,777 @@
+import datetime
+import decimal
+from collections.abc import Callable
+from typing import (
+    Any,
+    Literal,
+    NewType,
+    Optional,
+    Union,
+    get_args,
+    get_origin,
+)
+
+from django.contrib.contenttypes.fields import GenericForeignKey
+from django.db.models import ForeignObjectRel, Model, Q, QuerySet
+from django.db.models.fields import Field as DjangoField
+from rest_framework import fields as drf_fields
+from rest_framework.request import Request
+from rest_framework.utils import model_meta
+
+try:
+    from types import UnionType # noqa
+except ImportError:
+    UnionType = Union
+
+Email = NewType("Email", str)
+IPAddress = NewType("IPAddress", str)
+
+LOOKUP_CATEGORIES = {
+    "basic": ["exact", "in", "isnull"],
+    "text": ["icontains", "contains", "startswith", "endswith", "iexact"],
+    "comparison": ["gt", "gte", "lt", "lte", ],
+    "date": ["date", "year", "month", "day", "week", "week_day", "quarter"],
+    "time": ["time", "hour", "minute", "second"],
+    "advanced": ["regex", "iregex"],
+    "postgres": ["search", "trigram_similar", "unaccent"],
+    "pg_array": ["contains", "overlaps", "contained_by"],
+    "unsafe": ["regex", "iregex"],  # Potentially expensive/dangerous
+}
+
+# Default lookup configuration by Django field type
+DEFAULT_FIELD_LOOKUPS = {
+    # Text fields
+    "CharField": ["basic", "text"],
+    "TextField": ["basic", "text"],
+    "EmailField": ["basic", "text"],
+    "URLField": ["basic", "text"],
+    "SlugField": ["basic", "text"],
+    # Numeric fields
+    "IntegerField": ["basic", "comparison"],
+    "BigIntegerField": ["basic", "comparison"],
+    "SmallIntegerField": ["basic", "comparison"],
+    "PositiveIntegerField": ["basic", "comparison"],
+    "PositiveSmallIntegerField": ["basic", "comparison"],
+    "FloatField": ["basic", "comparison"],
+    "DecimalField": ["basic", "comparison"],
+    # Date/Time fields
+    "DateField": ["basic", "comparison", "date"],
+    "DateTimeField": ["basic", "comparison", "date", "time"],
+    "TimeField": ["basic", "comparison", "time"],
+    "DurationField": ["basic", "comparison"],
+    # Other fields
+    "BooleanField": ["basic"],
+    "IPAddressField": ["basic"],
+    "GenericIPAddressField": ["basic"],
+    "JSONField": ["basic"],
+    # Relationship fields
+    "ForeignKey": ["basic"],
+    "OneToOneField": ["basic"],
+    "ManyToManyField": ["basic"],
+    # Default fallback
+    "_default": ["basic"],
+}
+
+
+LOOKUP_SET = set(DjangoField.get_lookups().keys())
+
+DjangoFieldType =  DjangoField | ForeignObjectRel | GenericForeignKey
+
+ALL_FIELDS = "__all__"
+
+
+def extract_model_fields(model: type[Model], fields: list[str] | tuple[str] | Literal["__all__"], exclude: list[str] | tuple[str], ) -> list[DjangoField]:
+    """
+    Returns a list of model fields based on the provided options.
+    Args:
+        model: Model class to extract fields from.
+        fields: List of field names to include. If set to "__all__", all fields are included.
+        exclude: List of field names to exclude.
+
+    """
+    if fields and fields != ALL_FIELDS and not isinstance(fields, (list, tuple)):
+        msg = (
+            f'The `fields` option must be a list or tuple or "__all__" '
+            f"Got {type(fields).__name__}"
+        )
+        raise TypeError(msg)
+
+    if exclude and not isinstance(exclude, (list, tuple)):
+        msg = f"The `exclude` option must be a list or tuple. Got {type(exclude).__name__}"
+        raise TypeError(msg)
+
+    if model_meta.is_abstract_model(model):
+        msg = f"Abstract models cannot be used. {model.__name__} is abstract."
+        raise ValueError(msg)
+
+    if fields == ALL_FIELDS:
+        fields = model._meta.get_fields()
+    else:
+        fields = [model._meta.get_field(field) for field in fields]
+
+    model_fields = []
+    for field in fields:
+        if field.name not in exclude:
+            model_fields.append(field)
+    return model_fields
+
+
+
+def process_lookups(lookups, lookup_categories):
+    # Process and expand lookup expressions into concrete lookup strings.
+    # Lookup expressions can be specified as categories (e.g., "basic", "text") which
+    # expand to multiple concrete lookups, or as specific Django ORM lookups.
+    # lookup_categories, for fields are a default set of categories, if lookups = '__all__',
+    # Categories inside lookup_categories will be expanded
+    # lookups can also contain the categories itself.
+    # Example:
+    #       process_lookups([], ["comparison"]) -> ["gt", "gte", "lt", "lte", ]
+    #       process_lookups(["gt", "lt"], []) -> ["gt", "lt"]
+    #       process_lookups(["comparison"], []) -> ["gt", "gte", "lt", "lte", ]
+    lookups = lookups or []
+    expanded_lookups = []
+
+    if lookups == ALL_FIELDS:
+        lookups = []
+        for category in lookup_categories:
+            lookups.extend(DEFAULT_FIELD_LOOKUPS.get(category, "_default"))
+
+    if not lookups:
+        return []
+
+    if not all(isinstance(lookup, str) for lookup in lookups):
+        msg = "`lookups` must be a list of strings"
+        raise AssertionError(msg)
+
+    for lookup in lookups:
+        if lookup in LOOKUP_CATEGORIES:
+            expanded_lookups.extend(LOOKUP_CATEGORIES.get(lookup, []))
+        else:
+            expanded_lookups.append(lookup)
+
+    return list(set(expanded_lookups))
+
+
+
+class Field(drf_fields.Field):
+    """
+    Base filter field that extends rest_framework's Field with filtering capabilities.
+
+    Field inherits all validation logic from Django Rest Framework's Field class and
+    adds support for filtering Django querysets. Each field can generate additional
+    lookup and negation variants automatically.
+
+    Automatic Field Generation:
+        - Negation field: Every field creates a negation variant (e.g., "price!" for not equal)
+          unless allow_negate=False
+        - Lookup fields: Fields generate additional variants based on the lookups parameter
+          (e.g., "price__gte", "price__lte" from lookups=["gte", "lte"])
+
+    Parameters:
+        lookup_expr: Defines how to filter the queryset.
+            Can be:
+            - String: Django ORM lookup expression (e.g., "name__icontains", "price__gte")
+            - Callable: Function that receives (value) and returns either a dict
+              for Q() or a Q object directly. Cannot be used with method parameter.
+
+
+        lookups: Additional lookup expressions to generate
+            as separate fields. Can be:
+            - List of lookups: ["gte", "lte", "in"] creates price__gte, price__lte, price__in
+            - Category name: "basic" expands to ["exact", "in", "isnull"]
+            - ALL_FIELDS: Uses all lookups from the field's lookup_categories
+            - Dict of lookup expressions,
+                example: {"lte": {...field options...}}
+
+
+        method: Custom filtering method. Can be:
+            - Callable: Function with signature (instance, request, queryset, value) -> QuerySet or Q
+            - String: Name of a method on the FilterSet class
+            Cannot be used with lookup_expr parameter.
+
+        allow_negate: If False, prevents automatic creation of the negation field.
+            Default is True.
+
+        negate: If True, inverts the filter to exclude matching results.
+            Default is False.
+
+        description: Human-readable description of this field's purpose.
+
+        required: If True, validation fails when the field is not provided.
+            Default is False.
+
+    Examples:
+        Basic field with simple lookup::
+
+            name = StringField(lookup_expr="name__icontains")
+
+        Field with multiple lookups::
+
+            price = IntegerField(lookups=["gte", "lte", "exact"])
+            # Creates: price, price__gte, price__lte, price__exact, price!
+
+        Field with custom method::
+
+            def filter_by_date_range(filterset, queryset, value):
+                # Some extra business logic
+                return queryset.filter(created_at__range=value)
+
+            date_range = Field(method=filter_by_date_range)
+
+        Field with callable lookup_expr::
+
+            def custom_lookup(value):
+                return Q(name__icontains=value) | Q(description__icontains=value)
+
+            search = StringField(lookup_expr=custom_lookup)
+
+    See Also:
+        - IntegerField, StringField, DateTimeField: Specialized field types
+        - ListField: For filtering with multiple values
+        - OrderField: Special field for queryset ordering
+    """
+
+    lookup_categories = ["basic", "text"]
+
+    def __init__(
+            self,
+            *,
+            lookup_expr: str | Callable[[Any], Any] | None = None,
+            lookups: str | list[str] | dict[str, dict[str, Any]] | None = None,
+            method: Callable[[Request, QuerySet, Any], QuerySet] | str | None = None,
+            description: str | None = None,
+            negate: bool = False,
+            required: bool = False,
+            allow_negate: bool = True,
+            **kwargs,
+    ):
+        if method and lookup_expr:
+            msg = "`method` and `lookup_expr` cannot be used together."
+            raise AssertionError(msg)
+
+        if method and (not callable(method) and not isinstance(method, str)):
+            msg = "`method` must be a callable or a string."
+            raise AssertionError(msg)
+
+        self._validate_lookup_expr(lookup_expr, lookups)
+        self.lookup_expr = lookup_expr
+        self.lookups = process_lookups(lookups, self.lookup_categories)
+        self.method = method
+        self.description = description
+        self.negate = negate
+        self.allow_negate = allow_negate
+        kwargs["required"] = required
+        # Fields cannot be null for filter field
+        kwargs.setdefault("allow_null", False)
+        kwargs.setdefault("read_only", False)
+        kwargs.setdefault("write_only", False)
+
+        # Used to clone a field with different options
+        self.clone = self.__create_clone_method(**kwargs)
+        super().__init__(**kwargs)
+
+    @staticmethod
+    def _validate_lookup_expr(lookup_expr, lookups):
+        if lookup_expr and isinstance(lookup_expr, str) and lookups:
+            suffix = lookup_expr.rsplit("__", 1)[-1]
+            if suffix in LOOKUP_SET:
+                msg = (f"Invalid field configuration, `lookup_expr` ({lookup_expr}) already ends with a lookup "
+                       f"suffix ('{lookup_expr}'), but `lookups` is also specified.")
+                raise ValueError(msg)
+
+
+    def __create_clone_method(self, **kwargs):
+        def clone(_type=None, field_name=None, **inner_kwargs):
+            default_kwargs = dict(
+                lookup_expr=self.lookup_expr,
+                lookups=self.lookups,
+                method=self.method,
+                description=self.description,
+                negate=self.negate,
+                **kwargs,
+            )
+            default_kwargs.update(inner_kwargs)
+            if _type is not None:
+                return get_field_from_type(_type, field_name=field_name, **default_kwargs)
+            return self.__class__(**default_kwargs)
+        return clone
+
+    def ensure_lookup_expr(self, lookup_expr: str):
+        if not (self.lookup_expr or self.method):
+            self.lookup_expr = lookup_expr
+
+    def get_method(self, filterset=None):
+        method = self.method
+        if isinstance(method, str):
+            method = getattr(filterset, method)
+        return method
+
+    def apply_filter(
+            self,
+            filterset,
+            queryset: QuerySet,
+            value: Any,
+    ) -> tuple[QuerySet, Optional[Q]]:
+        """
+        Apply the field's filter to a queryset based on the validated value.
+
+        The original idea is to always send a Q object to support operators, but if a user defines a method
+        for this field, it can either return a Q object or a modified queryset.
+
+        Args:
+            filterset: The FilterSet instance that contains this field.
+            queryset: The Django queryset to filter.
+            value: The validated value from query parameters (already cleaned by DRF validation).
+
+        Returns:
+            A tuple of (queryset, q_object) where:
+            - queryset: Modified queryset (or original if using Q objects)
+            - q_object: Q object to be combined with other filters, or None if
+              queryset was modified directly
+
+        """
+        q = None
+        if self.method:
+            method = self.get_method(filterset)
+            qs = method(filterset, queryset, value)
+            if isinstance(qs, Q):
+                q = qs
+            elif isinstance(qs, QuerySet):
+                queryset = qs
+
+        else:
+            lookup_expr = self.lookup_expr
+
+            if lookup_expr is None:
+                lookup_expr = self.field_name
+            # Lookup expression can either be a string or a function
+            if isinstance(lookup_expr, str):
+                q = Q(**{lookup_expr: value})
+
+            elif lookup_expr is not None and callable(lookup_expr):
+                lookup_expr = lookup_expr(value)
+                if isinstance(lookup_expr, dict):
+                    q = Q(**lookup_expr)
+
+                elif isinstance(lookup_expr, Q):
+                    q = lookup_expr
+
+                else:
+                    msg = (
+                        f"Invalid lookup expression returned from lookup_expr "
+                        f"function: `{lookup_expr}`, must be a `dict` or `django.models.Q` object"
+                    )
+                    raise AssertionError(
+                        msg
+                    )
+            if self.negate and q:
+                q = ~q
+
+        return queryset, q
+
+    def __str__(self):
+        return (
+            f"{self.__class__.__name__}(field_name='{self.field_name}',"
+            f"lookup_expr='{self.lookup_expr}', "
+            f"lookups='{self.lookups}', "
+            f"method='{self.method}')"
+        )
+
+    def __repr__(self):
+        return self.__str__()
+
+
+class IntegerField(
+    Field,
+    drf_fields.IntegerField,
+):
+    lookup_categories = [
+        "basic",
+        "comparison",
+    ]
+
+
+class BooleanField(
+    Field,
+    drf_fields.BooleanField,
+):
+    lookup_categories = ["basic"]
+
+
+class FloatField(
+    Field,
+    drf_fields.FloatField,
+):
+    lookup_categories = ["basic", "comparison"]
+
+
+class StringField(
+    Field,
+    drf_fields.CharField,
+):
+    lookup_categories = ["basic", "text"]
+
+
+class IPAddressField(
+    Field,
+    drf_fields.IPAddressField,
+):
+    lookup_categories = ["basic", "text"]
+
+
+class EmailField(
+    Field,
+    drf_fields.EmailField,
+):
+    lookup_categories = ["basic", "text"]
+
+
+class DecimalField(
+    Field,
+    drf_fields.DecimalField,
+):
+    lookup_categories = ["basic", "comparison"]
+
+    # Default value for max_digits and decimal_places
+    def __init__(self, *, max_digits=10, decimal_places=2, **kwargs):
+        super().__init__(max_digits=max_digits, decimal_places=decimal_places, **kwargs)
+
+
+class DateField(
+    Field,
+    drf_fields.DateField,
+):
+    lookup_categories = ["basic", "comparison", "date"]
+
+
+class DateTimeField(
+    Field,
+    drf_fields.DateTimeField,
+):
+    lookup_categories = ["basic", "comparison", "date", "time"]
+
+
+class TimeField(
+    Field,
+    drf_fields.TimeField,
+):
+    lookup_categories = ["basic", "comparison", "time"]
+
+
+class DurationField(
+    Field,
+    drf_fields.DurationField,
+):
+    lookup_categories = ["basic", "comparison", "time"]
+
+
+class ChoiceField(
+    Field,
+    drf_fields.ChoiceField,
+):
+    lookup_categories = [
+        "basic",
+    ]
+
+
+class MultipleChoiceField(
+    Field,
+    drf_fields.MultipleChoiceField,
+):
+    lookup_categories = [
+        "basic",
+    ]
+
+
+class OrderField(MultipleChoiceField):
+    """
+    OrderField allows users to specify one or more ordering criteria via query parameters.
+    It supports both ascending and descending order, with optional direction override.
+    The query parameter name defaults to "order_by" but can be configured via Meta.order_param.
+
+    Parameters:
+        fields: Available ordering options as (option_key, model_field)
+            tuples.Example: [("price", "price"), ("name", "name")]
+
+        labels: Human-readable labels for display as
+            (option_key, label) tuples. If not provided, uses fields parameter.
+
+        override_order_dir: Override Django's default ordering
+            direction. The default is "asc". When set to "desc", the meaning of the "-" prefix
+            is reversed.
+
+    Examples:
+        Manual OrderField declaration::
+
+            class ProductFilterSet(FilterSet):
+                order_by = OrderField(
+                    fields=[("price", "price"), ("name", "name"), ("date", "created_at")],
+                    labels=[("price", "Price"), ("name", "Product Name"), ("date", "Date Created")],
+                )
+
+        Automatic generation via Meta:
+
+            class ProductFilterSet(FilterSet):
+                class Meta:
+                    model = Product
+                    fields = ALL_FIELDS
+                    order_fields = [("price", "price"), ("name", "name")]
+                    order_field_labels = [("price", "Price"), ("name", "Name")]
+                    override_order_dir = "asc"
+
+        Usage in a request::
+
+            # GET /products?order_by=price -> orders by price ascending
+            # GET /products?order_by=-price -> orders by price descending
+            # GET /products?order_by=name,-price -> orders by name asc, then price desc
+
+    Note: OrderField automatically generates ascending and descending variants for each option
+
+    """
+
+    def __init__(
+            self,
+            *,
+            fields,
+            labels=None,
+            override_order_dir: Literal["asc", "desc"] = "asc",
+            **kwargs,
+    ):
+        kwargs.pop("distinct", None)
+        kwargs.pop("distinct_order", None)
+        kwargs.pop("exclude", None)
+        kwargs.pop("lookup_expr", "")
+        kwargs.pop("lookups", None)
+        kwargs.setdefault("allow_negate", True)
+        self.fields = self.process_fields(fields)
+        self.labels = self.process_labels(labels or fields)
+        self.override_order_dir = override_order_dir
+        self.choices = self.process_choices(self.labels)
+        kwargs["choices"] = self.choices
+        super().__init__(**kwargs)
+
+    @staticmethod
+    def process_fields(fields):
+        ret = []
+        for key, val in fields:
+            ret.append((key, val))
+            ret.append((f"-{key}", f"-{val}"))
+        return ret
+
+    @staticmethod
+    def process_labels(labels):
+        if not labels:
+            return []
+        ret = []
+        for key, val in labels:
+            ret.append((key, val))
+            ret.append((f"-{key}", f"{val}"))
+        return ret
+
+    def process_choices(self, choices):
+        override = self.override_order_dir == "desc"
+        ret = []
+        for key, val in choices:
+            suffix = " (Ascending)"
+            if key.startswith("-") and override:
+                suffix = " (Ascending)"
+            elif override or key.startswith("-"):
+                suffix = " (Descending)"
+            ret.append((key, f"{val}{suffix}"))
+        return ret
+
+    def apply_filter(
+            self, filterset, queryset: QuerySet, value: list[str]
+    ) -> tuple[QuerySet, Q | None]:
+        if self.method:
+            method = self.get_method(filterset)
+            queryset = method(filterset, queryset, value)
+        else:
+            for val in value:
+                order_field = val
+                override = self.override_order_dir == "desc"
+                if val.startswith("-") and override:
+                    order_field = val[1:]
+                elif override:
+                    order_field = f"-{val}"
+                queryset = queryset.order_by(f"{order_field}")
+        return queryset, None
+
+
+class ListField(
+    Field,
+    drf_fields.ListField,
+):
+    """
+    Field for filtering with multiple values (e.g., filtering by multiple IDs).
+    ListField extends rest framework ListField with filtering capabilities, typically used with
+    the "__in" lookup to filter by multiple values.
+
+    Parameters:
+        child: A DRF field instance that validates individual list items.
+            For example, IntegerField() for a list of integers.
+
+        lookup_expr: Django ORM lookup expression. Defaults to "field_name__in"
+            when created from type annotations like List[int].
+
+        lookups: Additional lookup variants to generate.
+
+        method: Custom filtering method.
+
+        description: Human-readable description.
+
+    Examples:
+        Explicit ListField declaration::
+
+            from restflow.fields import ListField, IntegerField
+
+            class ProductFilterSet(FilterSet):
+                ids = ListField(child=IntegerField(), lookup_expr="id__in")
+                tags = ListField(child=StringField(), lookup_expr="tags__name__in")
+
+        Using type annotations::
+
+            class ProductFilterSet(FilterSet):
+                ids: List[int] # Automatically creates ListField with IntegerField child
+                tags: List[str] # Automatically creates ListField with StringField child
+
+        Usage in requests::
+
+            # Array format
+            GET /products?ids=1&ids=2&ids=3
+
+            # Comma-separated format (parsed automatically)
+            GET /products?ids=1,2,3
+
+    """
+
+    lookup_categories = [
+        "basic",
+    ]
+
+    def __init__(
+            self,
+            *,
+            child,
+            lookup_expr: str | None = None,
+            lookups: list[str] | None = None,
+            method: Callable[[Request, QuerySet, Any], QuerySet] | None = None,
+            description: str | None = None,
+            **kwargs,
+    ):
+        kwargs.pop("child", None)
+        child.source = None
+        super().__init__(
+            child=child,
+            lookup_expr=lookup_expr,
+            lookups=lookups,
+            method=method,
+            description=description,
+            **kwargs,
+        )
+
+    def to_internal_value(self, data):
+        """
+        Convert input data to internal Python representation.
+
+        Handles both array input and comma-separated strings, converting them to lists.
+
+        Args:
+            data: Input data, either a list or comma-separated string.
+
+        Returns:
+            List of validated values.
+        """
+        if isinstance(data, str):
+            data = list(map(str.strip, data.split(",")))
+
+        return super().to_internal_value(data)
+
+
+class RelatedField(Field):
+
+    def __init__(self, *,
+                 model: type[Model],
+                 fields: Literal["__all__"] | list[str],
+                 exclude: list[str] | tuple[str] | None=None,
+                 extra_kwargs: dict[str, dict[str, Any]] | None=None,
+                 **kwargs):
+        self.model = model
+        self.fields = fields
+        self.extra_kwargs = extra_kwargs or {}
+        self.exclude = exclude or []
+        super().__init__(lookup_expr=None, **kwargs)
+
+    def __create_clone_method(self, **__):
+        return
+
+    def get_model_fields(self):
+        return extract_model_fields(model=self.model, fields=self.fields, exclude=self.exclude)
+
+    def apply_filter(
+            self,
+            _,
+            queryset: QuerySet,
+            __,
+    ) -> tuple[QuerySet, Optional[Q]]:
+        return queryset, None
+
+    def get_method(self, *_):
+        return None
+
+    def __str__(self):
+        return (f"{self.__class__.__name__}("
+                f"model={self.model}, fields={self.fields}, extra_kwargs={self.extra_kwargs}, exclude_fields={self.exclude}"
+                f")")
+
+DataTypeSerializerMap: dict[type, type[Field]] = {
+    int: IntegerField,
+    float: FloatField,
+    str: StringField,
+    bool: BooleanField,
+    datetime.datetime: DateTimeField,
+    datetime.date: DateField,
+    datetime.time: TimeField,
+    datetime.timedelta: DurationField,
+    decimal.Decimal: DecimalField,
+    Email: EmailField,
+    IPAddress: IPAddressField,
+}
+
+DRF_DATA_TYPE_CHILD_ASSERTION_ERROR = "`annotations` must be in {types}".format(
+    types=(*tuple([t.__name__ for t in DataTypeSerializerMap]), Literal.__name__, list.__name__, list.__name__,
+           "Optional[T]", "Union[T, None]")
+)
+
+
+def get_field_from_type(data_type, field_name: str | None = None, **field_kwargs):
+    """
+    Convert a Python type annotation into the appropriate Field class instance.
+    This function enables FilterSet to use type annotations for field declarations,
+    automatically selecting the correct Field subclass based on the Python type.
+    """
+    field_class = DataTypeSerializerMap.get(data_type)
+
+    if get_origin(data_type) == Literal:
+        args = get_args(data_type)
+        field_kwargs["choices"] = tuple(zip(args, args, strict=False))
+        field_class = ChoiceField
+
+    elif (get_origin(data_type) == Union or get_origin(data_type) == UnionType) and type(None) in get_args(data_type):
+        args = get_args(data_type)
+        valid_types = [arg for arg in args if arg is not type(None)]
+        if valid_types and valid_types[0] in DataTypeSerializerMap:
+            field_class = DataTypeSerializerMap.get(valid_types[0])
+
+    elif get_origin(data_type) in [list, list] or data_type is list:
+        args = get_args(data_type)
+        data_type = args[0] if len(args) >= 1 else str
+        field_kwargs["child"] = get_field_from_type(data_type)
+        field_kwargs["lookup_expr"] = f"{field_name}__in"
+        field_class = ListField
+
+    if not field_class:
+        msg = f"{DRF_DATA_TYPE_CHILD_ASSERTION_ERROR}, not {data_type}"
+        raise AssertionError(msg)
+
+    return field_class(**field_kwargs)
