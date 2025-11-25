@@ -1,6 +1,6 @@
 [project]
 name = "drf-restflow"
-description = "Declarative library for Django REST Framework"
+description = "A Declarative library for Django REST Framework"
 readme = "README.md"
 license = {text = "BSD-3-Clause"}
 dynamic = [ "version" ]
