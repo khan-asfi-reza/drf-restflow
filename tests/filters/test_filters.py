@@ -7,16 +7,21 @@ from django.core.exceptions import FieldDoesNotExist
 from django.db.models import Q
 from rest_framework.test import APIRequestFactory
 
-from restflow.filters import (
+from restflow.filters.fields import (
+    BooleanField,
     Email,
     Field,
-    FilterSet,
-    InlineFilterSet,
     IntegerField,
     IPAddress,
+    ListField,
     OrderField,
     RelatedField,
     StringField,
+)
+from restflow.filters.filters import (
+    FilterSet,
+    InlineFilterSet,
+    getattr_multi_source,
 )
 from tests.models import SampleAbstractModel, SampleModel
 
@@ -267,6 +272,42 @@ def test_filterset_with_lookups():
     assert "price__gte" in filterset.fields
     assert "price__lte" in filterset.fields
     assert "price!" in filterset.fields
+
+
+def test_filterset_with_lookup_in():
+    """Test FilterSet generates lookup `in` as ListField"""
+
+    class TestFilterSet(FilterSet):
+        price = IntegerField(lookups=["in"])
+
+    filterset = TestFilterSet()
+    assert "price__in" in filterset.fields
+    assert "price__in!" in filterset.fields
+    assert isinstance(filterset.fields["price__in"], ListField)
+
+
+
+def test_filterset_with_lookup_range():
+    """Test FilterSet generates lookup `range` as ListField"""
+
+    class TestFilterSet(FilterSet):
+        price = IntegerField(lookups=["range"])
+
+    filterset = TestFilterSet()
+    assert "price__range" in filterset.fields
+    assert "price__range!" in filterset.fields
+    assert isinstance(filterset.fields["price__range"], ListField)
+
+def test_filterset_with_lookup_isnull():
+    """Test FilterSet generates lookup `isnull` as BooleanField"""
+
+    class TestFilterSet(FilterSet):
+        price = IntegerField(lookups=["isnull"])
+
+    filterset = TestFilterSet()
+    assert "price__isnull" in filterset.fields
+    assert "price__isnull!" in filterset.fields
+    assert isinstance(filterset.fields["price__isnull"], BooleanField)
 
 
 def test_filterset_with_callable_lookup_expr():
@@ -797,3 +838,10 @@ def test_inline_filterset_with_no_model():
     """Test InlineFilterSet with no model"""
     with pytest.raises(ValueError):
         InlineFilterSet(name="TestFilterSet",)
+
+
+@pytest.mark.parametrize(
+    "obj_list", [[], int]
+)
+def test_getattr_multi_source(obj_list):
+    assert getattr_multi_source(obj_list, "abcd", 1) == 1

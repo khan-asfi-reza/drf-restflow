@@ -391,7 +391,6 @@ def test_mixed_character_fields():
 
     filterset = TestFilterSet()
 
-    # All should be StringField except email
     assert isinstance(filterset.fields["char_field"], StringField)
     assert isinstance(filterset.fields["text_field"], StringField)
     assert isinstance(filterset.fields["email_field"], EmailField)
@@ -478,10 +477,6 @@ def test_field_with_extra_kwargs_lookups():
     assert "char_field__icontains" in filterset.fields
     assert "char_field__startswith" in filterset.fields
 
-
-# ============================================================================
-# Database Filtering Tests (using all field types)
-# ============================================================================
 
 
 @pytest.mark.django_db

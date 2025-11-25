@@ -2,60 +2,94 @@
 Some pieces of code taken from:
   - Project Name: django-rest-framework
   - Source URL: https://github.com/encode/django-rest-framework
-  - File: tests/test_fields.py
+  - File: tests/test_py
 
-Testing the essential things, as the fields are inherited from `djangorestframework`, only testing basic and
-minimal cases.
+Testing the essential things, as the fields are inherited from `djangorestframework`
 """
 
 import datetime
+import decimal
 from decimal import Decimal
 from types import NoneType
 from typing import Optional, Union
+from unittest.mock import MagicMock
 
 import pytest
 import pytz
-from django.db.models import Q
+from django.db.models import Q, QuerySet
 from rest_framework import serializers
 
-from restflow.filters import (
+from restflow.filters import FilterSet
+from restflow.filters.fields import (
+    LOOKUP_CATEGORIES,
+    BooleanField,
+    ChoiceField,
     DateField,
     DateTimeField,
     DecimalField,
     DurationField,
+    Email,
     EmailField,
     Field,
-    FilterSet,
     FloatField,
     IntegerField,
+    IPAddress,
+    IPAddressField,
+    ListField,
+    MultipleChoiceField,
+    OrderField,
+    RelatedField,
     StringField,
     TimeField,
-    fields,
+    extract_model_fields,
+    get_field_from_type,
+    process_lookups,
+)
+from tests.models import SampleModel
+
+TEST_DATE_TIME = datetime.datetime(
+    year=2025, month=1, day=1, hour=1, minute=1, second=1, tzinfo=pytz.UTC
 )
 
-
-class CustomType(type):
-    pass
-
-
-@pytest.mark.parametrize(
-    "data_type",
-    [int, float, str, bool, CustomType],
+TEST_DATE_TIME_2 = datetime.datetime(
+    year=2025, month=1, day=2, hour=1, minute=1, second=1, tzinfo=pytz.UTC
 )
-def test_get_child_drf_field_from_data_type(data_type):
-    if data_type == CustomType:
-        with pytest.raises(AssertionError) as error:
-            fields.get_field_from_type(data_type)
-            assert error.value == fields.DRF_DATA_TYPE_CHILD_ASSERTION_ERROR
-    else:
-        child = fields.get_field_from_type(data_type)
-        assert isinstance(child, serializers.Field)
 
 
 def get_items(item):
     if isinstance(item, dict):
         return item.items()
     return item
+
+
+@pytest.mark.parametrize(
+    "data_type",
+    [
+        int,
+        float,
+        str,
+        bool,
+        datetime.datetime,
+        datetime.date,
+        datetime.time,
+        datetime.timedelta,
+        decimal.Decimal,
+        Email,
+        IPAddress,
+    ]
+)
+def test_get_child_drf_field_from_data_type(data_type):
+    # Valid data types should pass
+    child = get_field_from_type(data_type)
+    assert isinstance(child, serializers.Field)
+
+
+def test_get_child_drf_field_from_custom_type():
+    with pytest.raises(AssertionError):
+        class CustomField:
+            pass
+        get_field_from_type(CustomField)
+
 
 
 class FieldBaseTest:
@@ -65,9 +99,80 @@ class FieldBaseTest:
     valid_inputs = {}
     invalid_inputs = {}
     outputs = {}
+    filter_lookup_suffix = ""
 
     def get_field(self, **kwargs):
         return self.field(**self.field_kwargs, **kwargs)
+
+    @staticmethod
+    def make_qs(values):
+        values = values if isinstance(values, (list, tuple)) else [values]
+        qs = QuerySet(model=None)
+        qs._result_cache = values
+        return qs
+
+
+    def _assert_lookup_expr_apply_filter(self, field, negate=False):
+        # This makes sure the apply_filter logic is properly handled for variants for lookup_expr
+        # For string, callable and dict lookup_expr
+        for input_value in self.valid_inputs.values():
+            qs = self.make_qs(input_value)
+            _actual_qs, actual_q = field.apply_filter(None, qs, input_value)
+            expected_q = Q(**{f"field{self.filter_lookup_suffix}": input_value})
+            if negate:
+                expected_q = ~expected_q
+            assert actual_q == expected_q, f"input value: {input_value!r}"
+
+
+    def _assert_method_apply_filter(self, field, filterset=None):
+        # This makes sure the apply_filter logic is properly handled for variants for method
+        # For both string and callable methods
+        for input_value in self.valid_inputs.values():
+            qs = self.make_qs(input_value)
+            _actual_qs, _ = field.apply_filter(filterset, qs, input_value)
+            assert qs == _actual_qs, f"input value: {input_value!r}"
+
+    def test_field_apply_filter_string_lookup_expr(self):
+        # Tests if `lookup_expr` as a string is returning the valid Q object
+        field = self.get_field(lookup_expr=f"field{self.filter_lookup_suffix}",)
+        self._assert_lookup_expr_apply_filter(field)
+        field_negated = self.get_field(lookup_expr=f"field{self.filter_lookup_suffix}", negate=True)
+        self._assert_lookup_expr_apply_filter(field_negated, negate=True)
+
+    def test_field_apply_filter_func_lookup_expr(self):
+        # Tests if `lookup_expr` as a function is returning the valid Q object
+        # It should return a Q object with Q(field=x)
+        field = self.get_field(lookup_expr=lambda x: Q(**{
+            f"field{self.filter_lookup_suffix}": x
+        }))
+        self._assert_lookup_expr_apply_filter(field)
+
+    def test_field_apply_filter_dict_lookup_expr(self):
+        # Tests if `lookup_expr` as a function is returning the valid Q object
+        # It should return a Q object with Q(field=x)
+        field = self.get_field(lookup_expr=lambda x: {f"field{self.filter_lookup_suffix}": x})
+        self._assert_lookup_expr_apply_filter(field)
+
+    def test_field_apply_filter_method_as_callable(self):
+        # Tests if the filter method is being called with the correct parameters
+        # Tests if the callable function is executed
+        def filter_method(filterset, queryset, _):
+            assert filterset is not None
+            return queryset
+
+        field = self.get_field(method=filter_method)
+        self._assert_method_apply_filter(field, MagicMock())
+
+    def test_field_apply_filter_method_as_string(self):
+        # Tests if the string method is executed
+        class DummyFilterSet:
+            @staticmethod
+            def filter_method(filterset, queryset, _):
+                assert filterset is not None
+                return queryset
+
+        field = self.get_field(method="filter_method")
+        self._assert_method_apply_filter(field, DummyFilterSet())
 
     def test_valid_inputs(self):
         """
@@ -89,6 +194,17 @@ class FieldBaseTest:
                 field.run_validation(input_value)
             assert exc_info.value.detail == expected_failure, f"input value: {input_value!r}"
 
+    def test_method_should_be_string_or_callable(self):
+        """Test that the method should be string or callable"""
+        with pytest.raises(TypeError):
+            self.get_field(method=1)
+
+
+    def test_validate_lookup_expr(self):
+        # `lookup_expr` should not end with a lookup if `lookups` are specified.
+        with pytest.raises(ValueError):
+            self.get_field(lookup_expr="field__gte", lookups=["lt"])
+
     @pytest.mark.parametrize(
         ("lookup_param", "val"),
         [
@@ -98,23 +214,87 @@ class FieldBaseTest:
     )
     def test_field_lookup_expr_param(self, lookup_param, val):
         """
-        Ensure that both lookup field and param name is correct.
+        Ensure that the lookup field is correct.
         """
         field = self.get_field(**{lookup_param: val})
         assert field.lookup_expr == val
 
-    def test_field_lookup_expr_method(self):
-        """
-        Ensure that lookup_expr or lookup_expr or method is set
-        """
-        field = self.get_field(
-            method="lk",
-        )
-        assert field.method == "lk"
+
+    def test_field_method_and_lookup_expr_conflict(self):
+        """Test that method and lookup_expr cannot be used together"""
+        with pytest.raises(AssertionError) as exc:
+            self.get_field(method="filter_method", lookup_expr="field__gte")
+        assert "`method` and `lookup_expr` cannot be used together" in str(exc.value)
+
+    def test_field_get_method_as_string(self):
+        """Test get_method when `method` is a string"""
+        class TestFilter(FilterSet):
+            field_1 = self.get_field(method="custom_filter")
+
+            @staticmethod
+            def custom_filter(_filterset, queryset, value):
+                nonlocal self
+                assert _filterset.__class__ == self.__class__
+                assert value == next(iter(self.valid_inputs.values()))
+                return queryset
+
+        filterset = TestFilter({"field_1": next(iter(self.valid_inputs.keys()))})
+        assert callable(filterset.fields["field_1"].get_method(filterset))
+
+    def test_field_get_method_as_callable(self):
+        """Test get_method when `method` is a callable function"""
+
+        def custom_filter(_filterset, queryset, value):
+            nonlocal self
+            assert _filterset.__class__ == self.__class__
+            assert value == next(iter(self.valid_inputs.values()))
+            return queryset
+
+        class TestFilter(FilterSet):
+            field_1 = self.get_field(method=custom_filter)
+
+        filterset = TestFilter({"field_1": next(iter(self.valid_inputs.keys()))})
+        assert callable(filterset.fields["field_1"].get_method(filterset))
+
+
+    @pytest.mark.parametrize(
+        ("param", "expected"), [
+            (["gte", "lte"], ["gte", "lte"]),
+            (("gte", "lte"), ["gte", "lte"]),
+            (["comparison", "gte", "lte", "lt"], LOOKUP_CATEGORIES.get("comparison")),
+            (["comparison", ], LOOKUP_CATEGORIES.get("comparison")),
+            (
+                    {"comparison": {"allow_negate": False}},
+                    {k: {"allow_negate": True} for k in LOOKUP_CATEGORIES.get("comparison")},
+            ),
+        ]
+    )
+    def test_lookups_with_iterable(self, param, expected):
+        # Tests dict, list, tuple variations of process lookups with categories.
+        field = self.get_field(lookups=param)
+        assert sorted(field.lookups) == sorted(expected)
+
+    def test_lookups_with_string_all(self, ):
+        """Test process_lookups with '__all__', it should return field default lookups"""
+        field = self.get_field(lookups="__all__")
+        assert sorted(field.lookups) == sorted(process_lookups(
+            field.lookup_categories, []
+        ))
+
+    def test_empty_process_lookups(self, ):
+        """Test process_lookups with an empty list, it should return an empty list"""
+        field = self.get_field(lookups=[])
+        assert field.lookups == []
+
+    def test_invalid_lookups(self, ):
+        """Test process_lookups with an invalid list (list of int), it should raise an error"""
+        with pytest.raises(AssertionError):
+            self.get_field(lookups=[1, 2, 3])
+
 
 
 class TestBooleanField(FieldBaseTest):
-    field = fields.BooleanField
+    field = BooleanField
     invalid_inputs = {
         "foo": ["Must be a valid boolean."],
         None: ["This field may not be null."],
@@ -144,9 +324,8 @@ class TestBooleanField(FieldBaseTest):
         0: False,
     }
 
-
 class TestIntegerField(FieldBaseTest):
-    field = fields.IntegerField
+    field = IntegerField
     invalid_inputs = {
         "foo": ["A valid integer is required."],
         None: ["This field may not be null."],
@@ -160,7 +339,7 @@ class TestIntegerField(FieldBaseTest):
 
 
 class TestFloatField(FieldBaseTest):
-    field = fields.FloatField
+    field = FloatField
     invalid_inputs = {
         "foo": ["A valid number is required."],
         None: ["This field may not be null."],
@@ -175,7 +354,7 @@ class TestFloatField(FieldBaseTest):
 
 
 class TestStringField(FieldBaseTest):
-    field = fields.StringField
+    field = StringField
     invalid_inputs = {}
     valid_inputs = {
         "foo": "foo",
@@ -184,7 +363,7 @@ class TestStringField(FieldBaseTest):
 
 
 class TestDateTimeField(FieldBaseTest):
-    field = fields.DateTimeField
+    field = DateTimeField
     invalid_inputs = {
         "foo": [
             "Datetime has wrong format. Use one of these formats instead: YYYY-MM-DDThh:mm[:ss[.uuuuuu]]["
@@ -192,14 +371,13 @@ class TestDateTimeField(FieldBaseTest):
         ]
     }
     valid_inputs = {
-        "2025-01-01T01:01:01+00:00": datetime.datetime(
-            year=2025, month=1, day=1, hour=1, minute=1, second=1, tzinfo=pytz.UTC
-        ),
+        "2025-01-01T01:01:01+00:00": TEST_DATE_TIME,
     }
 
 
+
 class TestTimeField(FieldBaseTest):
-    field = fields.TimeField
+    field = TimeField
     invalid_inputs = {
         "foo": [
             "Time has wrong format. Use one of these formats instead: hh:mm[:ss[.uuuuuu]]."
@@ -211,7 +389,7 @@ class TestTimeField(FieldBaseTest):
 
 
 class TestDateField(FieldBaseTest):
-    field = fields.DateField
+    field = DateField
     invalid_inputs = {
         "foo": ["Date has wrong format. Use one of these formats instead: YYYY-MM-DD."]
     }
@@ -220,8 +398,9 @@ class TestDateField(FieldBaseTest):
     }
 
 
+
 class TestDurationField(FieldBaseTest):
-    field = fields.DurationField
+    field = DurationField
     invalid_inputs = {
         "abc": [
             "Duration has wrong format. Use one of these formats instead: [DD] [HH:[MM:]]ss[.uuuuuu]."
@@ -252,7 +431,7 @@ class TestDurationField(FieldBaseTest):
 
 
 class TestEmailField(FieldBaseTest):
-    field = fields.EmailField
+    field = EmailField
     invalid_inputs = {"foo": ["Enter a valid email address."]}
     valid_inputs = {"user@example.com": "user@example.com"}
 
@@ -287,7 +466,7 @@ class TestDecimalField(FieldBaseTest):
             ["Ensure that there are no more than 2 digits before the decimal point."],
         ),
     )
-    field = fields.DecimalField
+    field = DecimalField
     field_kwargs = {
         "max_digits": 3,
         "decimal_places": 1,
@@ -311,12 +490,28 @@ class TestIPAddressField(FieldBaseTest):
         ],
         1000: ["Enter a valid IPv4 or IPv6 address."],
     }
-    field = fields.IPAddressField
+    field = IPAddressField
+
+
+class TestChoiceField(FieldBaseTest):
+    valid_inputs = {"1": "1", "2": "2"}
+    invalid_inputs = {"a": ['"a" is not a valid choice.']}
+    field = ChoiceField
+    field_kwargs = {"choices": [("1", "One"), ("2", "Two")]}
+
+
+class TestMultipleChoiceField(FieldBaseTest):
+    valid_inputs = {"1,2": {"1", "2"}}
+    invalid_inputs = {"a": ['"a" is not a valid choice.']}
+    field = MultipleChoiceField
+    field_kwargs = {"choices": [("1", "One"), ("2", "Two")]}
+    filter_lookup_suffix = "__in"
 
 
 class BaseListFieldTest(FieldBaseTest):
     invalid_inputs = {1: ['Expected a list of items but got type "int".']}
-    field = fields.ListField
+    field = ListField
+    filter_lookup_suffix = "__in"
 
     def test_invalid_inputs(self):
         """
@@ -331,7 +526,6 @@ class BaseListFieldTest(FieldBaseTest):
 class TestListFieldString(BaseListFieldTest):
     valid_inputs = {"1,2,3,4": ["1", "2", "3", "4"]}
     field_kwargs = {"child": StringField()}
-
 
 class TestListFieldInt(BaseListFieldTest):
     valid_inputs = {"1,2,3,4": [1, 2, 3, 4]}
@@ -352,7 +546,6 @@ class TestListFieldDecimal(BaseListFieldTest):
         "child": DecimalField(max_digits=3, decimal_places=1),
     }
 
-
 class TestListFieldEmail(BaseListFieldTest):
     valid_inputs = {
         "user1@example.com,user2@example.com": [
@@ -365,35 +558,17 @@ class TestListFieldEmail(BaseListFieldTest):
         "child": EmailField(),
     }
 
-
 class TestListFieldDateTime(BaseListFieldTest):
     valid_inputs = {
         "2025-01-01T01:01:01+00:00,2025-01-02T01:01:01+00:00": [
-            datetime.datetime(
-                year=2025,
-                month=1,
-                day=1,
-                hour=1,
-                minute=1,
-                second=1,
-                tzinfo=pytz.UTC,
-            ),
-            datetime.datetime(
-                year=2025,
-                month=1,
-                day=2,
-                hour=1,
-                minute=1,
-                second=1,
-                tzinfo=pytz.UTC,
-            ),
+            TEST_DATE_TIME,
+            TEST_DATE_TIME_2,
         ]
     }
     invalid_inputs = {"a,b,3,4": [""]}
     field_kwargs = {
         "child": DateTimeField(),
     }
-
 
 class TestListFieldDate(BaseListFieldTest):
     valid_inputs = {
@@ -416,6 +591,7 @@ class TestListFieldDate(BaseListFieldTest):
     }
 
 
+
 class TestListFieldTime(BaseListFieldTest):
     valid_inputs = {
         "01:01:01,02:02:02": [
@@ -429,6 +605,7 @@ class TestListFieldTime(BaseListFieldTest):
     }
 
 
+
 class TestListFieldDuration(BaseListFieldTest):
     valid_inputs = {
         "15,16": [
@@ -440,90 +617,6 @@ class TestListFieldDuration(BaseListFieldTest):
     field_kwargs = {
         "child": DurationField(),
     }
-
-
-# Additional tests for full coverage
-
-
-def test_process_lookups_with_all():
-    """Test process_lookups with '__all__' special case"""
-    from restflow.filters import process_lookups
-
-    # "__all__" expands to lookups from the lookup_categories
-    result = process_lookups("__all__", ["basic", "text"])
-    assert isinstance(result, list)
-    # It should expand to the categories provided
-    assert len(result) > 0
-
-
-def test_process_lookups_with_categories():
-    """Test process_lookups with category expansion"""
-    from restflow.filters import process_lookups
-
-    # When no lookup_categories provided, only specific lookups are returned
-    result = process_lookups(["gte", "lte", "exact"], [])
-    assert isinstance(result, list)
-    assert "gte" in result
-    assert "lte" in result
-    assert "exact" in result
-
-
-def test_process_lookups_with_specific_lookups():
-    """Test process_lookups with specific lookup strings"""
-    from restflow.filters import process_lookups
-
-    result = process_lookups(["gte", "lte"], [])
-    assert "gte" in result
-    assert "lte" in result
-    assert len(result) == 2
-
-
-def test_process_lookups_empty():
-    """Test process_lookups with None and empty list"""
-    from restflow.filters import process_lookups
-
-    assert process_lookups(None, []) == []
-    assert process_lookups([], []) == []
-
-
-def test_process_lookups_invalid_type():
-    """Test process_lookups with invalid lookup types"""
-    from restflow.filters import process_lookups
-
-    with pytest.raises(AssertionError) as exc:
-        process_lookups([1, 2, 3], [])
-    assert "`lookups` must be a list of strings" in str(exc.value)
-
-
-def test_field_method_and_lookup_expr_conflict():
-    """Test that method and lookup_expr cannot be used together"""
-    with pytest.raises(AssertionError) as exc:
-        IntegerField(method="filter_method", lookup_expr="field__gte")
-    assert "`method` and `lookup_expr` cannot be used together" in str(exc.value)
-
-
-
-def test_field_get_method_as_string():
-    """Test get_method when method is a string"""
-    class TestFilter(FilterSet):
-        integer_field = IntegerField(method="custom_filter")
-
-        def custom_filter(self, request, queryset, value):
-            return queryset
-
-    filterset = TestFilter({"integer_field": 10})
-    assert callable(filterset.fields["integer_field"].get_method(filterset))
-
-
-def test_field_get_method_as_callable():
-    """Test get_method when method is a callable"""
-
-    def custom_filter(request, queryset, value):
-        return queryset
-
-    field = IntegerField(method=custom_filter)
-    method = field.get_method()
-    assert method == custom_filter
 
 
 @pytest.mark.django_db
@@ -597,10 +690,6 @@ def test_field_apply_filter_with_callable_lookup_expr_returning_dict():
 @pytest.mark.django_db
 def test_field_apply_filter_with_callable_lookup_expr_returning_q():
     """Test apply_filter with callable lookup_expr returning Q object"""
-    from django.db.models import Q
-
-    from tests.models import SampleModel
-
     def lookup_func(value):
         return Q(integer_field__gte=value)
 
@@ -614,8 +703,6 @@ def test_field_apply_filter_with_callable_lookup_expr_returning_q():
 @pytest.mark.django_db
 def test_field_apply_filter_with_callable_lookup_expr_invalid_return():
     """Test apply_filter with callable lookup_expr returning invalid type"""
-    from tests.models import SampleModel
-
     def lookup_func(value):
         return "invalid"
 
@@ -629,15 +716,10 @@ def test_field_apply_filter_with_callable_lookup_expr_invalid_return():
 
 @pytest.mark.django_db
 def test_field_apply_filter_with_exclude():
-    """Test apply_filter with exclude=True"""
-    from django.db.models import Q
-
-    from tests.models import SampleModel
-
+    """Test apply_filter with negate=True"""
     field = IntegerField(lookup_expr="integer_field", negate=True)
     qs = SampleModel.objects.all()
     _result_qs, q = field.apply_filter(None, qs, 10)
-
     assert isinstance(q, Q)
     # Q object should be negated
     assert str(q).startswith("(NOT")
@@ -655,8 +737,6 @@ def test_field_str_and_repr():
 
 def test_order_field_process_fields():
     """Test OrderField.process_fields creates ascending and descending variants"""
-    from restflow.filters import OrderField
-
     fields = [("price", "price"), ("name", "name")]
     result = OrderField.process_fields(fields)
 
@@ -669,8 +749,6 @@ def test_order_field_process_fields():
 
 def test_order_field_process_labels():
     """Test OrderField.process_labels creates labels for variants"""
-    from restflow.filters import OrderField
-
     labels = [("price", "Price"), ("name", "Name")]
     result = OrderField.process_labels(labels)
 
@@ -682,28 +760,20 @@ def test_order_field_process_labels():
 
 def test_order_field_process_labels_empty():
     """Test OrderField.process_labels with empty labels"""
-    from restflow.filters import OrderField
-
     result = OrderField.process_labels(None)
     assert result == []
 
 
 def test_order_field_process_choices():
     """Test OrderField.process_choices adds direction suffixes"""
-    from restflow.filters import OrderField
-
     field = OrderField(fields=[("price", "price")])
     choices = field.process_choices([("price", "Price"), ("-price", "Price")])
-
-    # Check that suffixes are added
     assert any("Ascending" in choice[1] for choice in choices)
     assert any("Descending" in choice[1] for choice in choices)
 
 
 def test_order_field_process_choices_with_desc_override():
     """Test OrderField.process_choices with override_order_dir='desc'"""
-    from restflow.filters import OrderField
-
     field = OrderField(fields=[("price", "price")], override_order_dir="desc")
     choices = field.process_choices([("price", "Price"), ("-price", "Price")])
 
@@ -714,11 +784,6 @@ def test_order_field_process_choices_with_desc_override():
 @pytest.mark.django_db
 def test_order_field_apply_filter():
     """Test OrderField.apply_filter orders the queryset"""
-    from django.db.models import QuerySet
-
-    from restflow.filters import OrderField
-    from tests.models import SampleModel
-
     field = OrderField(fields=[("integer_field", "integer_field")])
     qs = SampleModel.objects.all()
     result_qs, q = field.apply_filter(None, qs, ["integer_field"])
@@ -730,10 +795,6 @@ def test_order_field_apply_filter():
 @pytest.mark.django_db
 def test_order_field_apply_filter_with_descending():
     """Test OrderField.apply_filter with descending order"""
-    from django.db.models import QuerySet
-
-    from restflow.filters import OrderField
-    from tests.models import SampleModel
 
     field = OrderField(fields=[("integer_field", "integer_field")])
     qs = SampleModel.objects.all()
@@ -746,11 +807,6 @@ def test_order_field_apply_filter_with_descending():
 @pytest.mark.django_db
 def test_order_field_apply_filter_with_override():
     """Test OrderField.apply_filter with override_order_dir"""
-    from django.db.models import QuerySet
-
-    from restflow.filters import OrderField
-    from tests.models import SampleModel
-
     field = OrderField(
         fields=[("integer_field", "integer_field")], override_order_dir="desc"
     )
@@ -763,11 +819,6 @@ def test_order_field_apply_filter_with_override():
 @pytest.mark.django_db
 def test_order_field_apply_filter_with_method():
     """Test OrderField.apply_filter when method is provided"""
-    from django.db.models import QuerySet
-
-    from restflow.filters import OrderField
-    from tests.models import SampleModel
-
     def custom_order(request, queryset, value):
         return queryset.order_by(*value)
 
@@ -781,21 +832,21 @@ def test_order_field_apply_filter_with_method():
 
 def test_list_field_to_internal_value_with_list():
     """Test ListField.to_internal_value with list input"""
-    field = fields.ListField(child=IntegerField())
+    field = ListField(child=IntegerField())
     result = field.to_internal_value([1, 2, 3])
     assert result == [1, 2, 3]
 
 
 def test_list_field_to_internal_value_with_string():
     """Test ListField.to_internal_value with comma-separated string"""
-    field = fields.ListField(child=IntegerField())
+    field = ListField(child=IntegerField())
     result = field.to_internal_value("1,2,3")
     assert result == [1, 2, 3]
 
 
 def test_list_field_to_internal_value_with_string_whitespace():
     """Test ListField.to_internal_value strips whitespace"""
-    field = fields.ListField(child=IntegerField())
+    field = ListField(child=IntegerField())
     result = field.to_internal_value("1, 2, 3")
     assert result == [1, 2, 3]
 
@@ -807,7 +858,7 @@ def test_get_field_from_type_unsupported():
         pass
 
     with pytest.raises(AssertionError) as exc:
-        fields.get_field_from_type(UnsupportedType)
+        get_field_from_type(UnsupportedType)
     assert "`annotations` must be in" in str(exc.value)
 
 
@@ -815,16 +866,13 @@ def test_get_field_from_type_with_literal():
     """Test get_field_from_type with Literal type"""
     from typing import Literal
 
-    field = fields.get_field_from_type(Literal["a", "b", "c"])
-    assert isinstance(field, fields.ChoiceField)
+    field = get_field_from_type(Literal["a", "b", "c"])
+    assert isinstance(field, ChoiceField)
     assert len(field.choices) == 3
 
 
 def test_get_field_from_type_with_optional():
-    """Test get_field_from_type with Optional type"""
-    from typing import Optional # noqa
-
-    field = fields.get_field_from_type(Optional[int])
+    field = get_field_from_type(Optional[int])
     assert isinstance(field, IntegerField)
 
 
@@ -833,29 +881,29 @@ def test_get_field_from_type_with_optional():
 def test_get_field_from_type_with_optional_invalid(dt):
     """Test get_field_from_type with Optional[None] raises exception"""
     with pytest.raises(AssertionError):
-        fields.get_field_from_type(dt)
+        get_field_from_type(dt)
 
 
 def test_get_field_from_type_with_list():
     """Test get_field_from_type with List type"""
 
-    field = fields.get_field_from_type(list[int], field_name="ids")
-    assert isinstance(field, fields.ListField)
+    field = get_field_from_type(list[int], field_name="ids")
+    assert isinstance(field, ListField)
     assert isinstance(field.child, IntegerField)
     assert field.lookup_expr == "ids__in"
 
 
 def test_get_field_from_type_with_bare_list():
     """Test get_field_from_type with bare list type"""
-    field = fields.get_field_from_type(list, field_name="items")
-    assert isinstance(field, fields.ListField)
+    field = get_field_from_type(list, field_name="items")
+    assert isinstance(field, ListField)
     assert isinstance(field.child, StringField)  # Defaults to str
     assert field.lookup_expr == "items__in"
 
 
 def test_choice_field():
     """Test ChoiceField basic functionality"""
-    field = fields.ChoiceField(
+    field = ChoiceField(
         choices=[("a", "Option A"), ("b", "Option B")], lookup_expr="choice_field"
     )
     assert field.run_validation("a") == "a"
@@ -864,8 +912,22 @@ def test_choice_field():
 @pytest.mark.django_db
 def test_multiple_choice_field():
     """Test MultipleChoiceField basic functionality"""
-    field = fields.MultipleChoiceField(
+    field = MultipleChoiceField(
         choices=[("a", "Option A"), ("b", "Option B")], lookup_expr="choices"
     )
     result = field.run_validation(["a", "b"])
     assert sorted(result) == ["a", "b"]
+
+
+def test_extract_model_fields_exclude_error_handle():
+    # Exclude must be a list or tuple
+    with pytest.raises(TypeError):
+        extract_model_fields(model=None, fields="__all__", exclude=1)
+
+
+def test_related_field():
+    """Test RelatedField basic functionality"""
+    field = RelatedField(model=SampleModel, fields=["name"], )
+    assert "RelatedField" in str(field)
+    assert field.model == SampleModel
+    assert field.exclude == []
