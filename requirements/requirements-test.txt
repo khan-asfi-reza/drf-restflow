@@ -1,0 +1,9 @@
+# Test dependencies
+-r requirements.txt
+
+pytest>=8.3.5
+pytest-cov>=6.0.0
+pytest-django>=4.10.0
+tox>=4.23.2
+dj-database-url>=3.0.1
+pytz>=2025.2

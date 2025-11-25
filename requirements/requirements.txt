@@ -1,0 +1,3 @@
+# Core dependencies
+django>=3.2
+djangorestframework>=3.14
