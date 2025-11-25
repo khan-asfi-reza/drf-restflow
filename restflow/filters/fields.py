@@ -1,6 +1,7 @@
 import datetime
 import decimal
 from collections.abc import Callable
+from types import UnionType
 from typing import (
     Any,
     Literal,
@@ -11,17 +12,11 @@ from typing import (
     get_origin,
 )
 
-from django.contrib.contenttypes.fields import GenericForeignKey
-from django.db.models import ForeignObjectRel, Model, Q, QuerySet
+from django.db.models import Model, Q, QuerySet
 from django.db.models.fields import Field as DjangoField
 from rest_framework import fields as drf_fields
 from rest_framework.request import Request
 from rest_framework.utils import model_meta
-
-try:
-    from types import UnionType # noqa
-except ImportError:
-    UnionType = Union
 
 Email = NewType("Email", str)
 IPAddress = NewType("IPAddress", str)
@@ -75,12 +70,13 @@ DEFAULT_FIELD_LOOKUPS = {
 
 LOOKUP_SET = set(DjangoField.get_lookups().keys())
 
-DjangoFieldType =  DjangoField | ForeignObjectRel | GenericForeignKey
-
 ALL_FIELDS = "__all__"
 
+LookupsType = str | list[str] | tuple[str] | dict[str, dict[str, Any]] | None
+FieldsType =  list[str] | tuple[str] | str
 
-def extract_model_fields(model: type[Model], fields: list[str] | tuple[str] | Literal["__all__"], exclude: list[str] | tuple[str], ) -> list[DjangoField]:
+
+def extract_model_fields(model: type[Model], fields: FieldsType, exclude: list[str] | tuple[str], ) -> list[DjangoField]:
     """
     Returns a list of model fields based on the provided options.
     Args:
@@ -116,41 +112,51 @@ def extract_model_fields(model: type[Model], fields: list[str] | tuple[str] | Li
     return model_fields
 
 
-
-def process_lookups(lookups, lookup_categories):
-    # Process and expand lookup expressions into concrete lookup strings.
-    # Lookup expressions can be specified as categories (e.g., "basic", "text") which
-    # expand to multiple concrete lookups, or as specific Django ORM lookups.
-    # lookup_categories, for fields are a default set of categories, if lookups = '__all__',
-    # Categories inside lookup_categories will be expanded
-    # lookups can also contain the categories itself.
-    # Example:
-    #       process_lookups([], ["comparison"]) -> ["gt", "gte", "lt", "lte", ]
-    #       process_lookups(["gt", "lt"], []) -> ["gt", "lt"]
-    #       process_lookups(["comparison"], []) -> ["gt", "gte", "lt", "lte", ]
-    lookups = lookups or []
-    expanded_lookups = []
+def process_lookups(lookups: LookupsType, lookup_categories: list[str]) -> list[str] | dict[str, dict[str, Any]]:
+    #
+    # Expand lookup definitions into concrete ORM lookup names.
+    # `lookups` can be:
+    #   -- list/tuple of strings --> returns unique list of lookup names
+    #   -- dict[str, Any] --> expands category keys into concrete keys, and copies the same value to each expanded key
+    #
+    # - Category names inside `lookups` expand via LOOKUP_CATEGORIES.
+    # - If `lookups == '__all__', expand all categories from `lookup_categories`.
+    # - Empty / None input → returns [].
+    # `lookup_categories` is more like a default value.
+    # Examples:
+    # process_lookups([], ["comparison"]) -> ["gt", "gte", "lt", "lte"]
+    #
+    # process_lookups(["gt", "lt"], []) -> ["gt", "lt"]
+    #
+    # process_lookups(["comparison"], []) -> ["gt", "gte", "lt", "lte"]
+    #
+    # process_lookups({"comparison": {"x": 1}}, []) -> {"gt": {"x": 1}, "gte": {"x": 1}, "lt": {"x": 1}, "lte": {"x": 1}}
+    #
+    if not lookups:
+        return [] if not isinstance(lookups, dict) else {}
 
     if lookups == ALL_FIELDS:
-        lookups = []
-        for category in lookup_categories:
-            lookups.extend(DEFAULT_FIELD_LOOKUPS.get(category, "_default"))
+        lookups = [cat for cat in lookup_categories if cat in LOOKUP_CATEGORIES]
 
-    if not lookups:
-        return []
-
-    if not all(isinstance(lookup, str) for lookup in lookups):
-        msg = "`lookups` must be a list of strings"
+    if not all(
+        isinstance(lookup, str) for lookup in (lookups if isinstance(lookups, (list, tuple)) else lookups.keys())
+    ):
+        msg = "`lookups` must be a list of strings or dict with string keys"
         raise AssertionError(msg)
 
-    for lookup in lookups:
-        if lookup in LOOKUP_CATEGORIES:
-            expanded_lookups.extend(LOOKUP_CATEGORIES.get(lookup, []))
+
+    expanded = {} if isinstance(lookups, dict) else []
+
+    items = lookups.items() if isinstance(lookups, dict) else [(lookup, None) for lookup in lookups]
+
+    for lookup, value in items:
+        concrete_lookups = LOOKUP_CATEGORIES.get(lookup, [lookup])
+        if isinstance(lookups, dict):
+            expanded.update(dict.fromkeys(concrete_lookups, value))
         else:
-            expanded_lookups.append(lookup)
+            expanded.extend(concrete_lookups)
 
-    return list(set(expanded_lookups))
-
+    return expanded if isinstance(lookups, dict) else list(set(expanded))
 
 
 class Field(drf_fields.Field):
@@ -237,8 +243,8 @@ class Field(drf_fields.Field):
             self,
             *,
             lookup_expr: str | Callable[[Any], Any] | None = None,
-            lookups: str | list[str] | dict[str, dict[str, Any]] | None = None,
-            method: Callable[[Request, QuerySet, Any], QuerySet] | str | None = None,
+            lookups: LookupsType = None,
+            method: Callable[[Any, QuerySet, Any], tuple[Q,QuerySet] | Q | QuerySet] | str | None = None,
             description: str | None = None,
             negate: bool = False,
             required: bool = False,
@@ -251,7 +257,7 @@ class Field(drf_fields.Field):
 
         if method and (not callable(method) and not isinstance(method, str)):
             msg = "`method` must be a callable or a string."
-            raise AssertionError(msg)
+            raise TypeError(msg)
 
         self._validate_lookup_expr(lookup_expr, lookups)
         self.lookup_expr = lookup_expr
@@ -265,7 +271,6 @@ class Field(drf_fields.Field):
         kwargs.setdefault("allow_null", False)
         kwargs.setdefault("read_only", False)
         kwargs.setdefault("write_only", False)
-
         # Used to clone a field with different options
         self.clone = self.__create_clone_method(**kwargs)
         super().__init__(**kwargs)
@@ -465,6 +470,7 @@ class DurationField(
     lookup_categories = ["basic", "comparison", "time"]
 
 
+
 class ChoiceField(
     Field,
     drf_fields.ChoiceField,
@@ -481,6 +487,14 @@ class MultipleChoiceField(
     lookup_categories = [
         "basic",
     ]
+
+    def to_internal_value(self, data):
+        """
+        Convert input data to internal Python representation.
+        """
+        if isinstance(data, str):
+            data = set(map(str.strip, data.split(",")))
+        return super().to_internal_value(data)
 
 
 class OrderField(MultipleChoiceField):
@@ -598,6 +612,8 @@ class OrderField(MultipleChoiceField):
         return queryset, None
 
 
+
+
 class ListField(
     Field,
     drf_fields.ListField,
@@ -670,29 +686,22 @@ class ListField(
             **kwargs,
         )
 
+
     def to_internal_value(self, data):
         """
         Convert input data to internal Python representation.
-
-        Handles both array input and comma-separated strings, converting them to lists.
-
-        Args:
-            data: Input data, either a list or comma-separated string.
-
-        Returns:
-            List of validated values.
         """
         if isinstance(data, str):
             data = list(map(str.strip, data.split(",")))
-
         return super().to_internal_value(data)
+
 
 
 class RelatedField(Field):
 
     def __init__(self, *,
                  model: type[Model],
-                 fields: Literal["__all__"] | list[str],
+                 fields: str | list[str],
                  exclude: list[str] | tuple[str] | None=None,
                  extra_kwargs: dict[str, dict[str, Any]] | None=None,
                  **kwargs):
@@ -703,7 +712,7 @@ class RelatedField(Field):
         super().__init__(lookup_expr=None, **kwargs)
 
     def __create_clone_method(self, **__):
-        return
+        return # pragma: no cover
 
     def get_model_fields(self):
         return extract_model_fields(model=self.model, fields=self.fields, exclude=self.exclude)
@@ -714,10 +723,10 @@ class RelatedField(Field):
             queryset: QuerySet,
             __,
     ) -> tuple[QuerySet, Optional[Q]]:
-        return queryset, None
+        return queryset, None  # pragma: no cover
 
     def get_method(self, *_):
-        return None
+        return None # pragma: no cover
 
     def __str__(self):
         return (f"{self.__class__.__name__}("
@@ -775,3 +784,10 @@ def get_field_from_type(data_type, field_name: str | None = None, **field_kwargs
         raise AssertionError(msg)
 
     return field_class(**field_kwargs)
+
+
+LOOKUP_DEFAULT_FIELD = {
+    "in": ListField,
+    "isnull": BooleanField,
+    "range": ListField,
+}

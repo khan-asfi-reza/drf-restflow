@@ -13,13 +13,13 @@ from rest_framework import fields as drf_fields
 from rest_framework.request import Request
 from rest_framework.serializers import Serializer, SerializerMetaclass
 
+from restflow.filters import LOOKUP_DEFAULT_FIELD
 from restflow.filters.fields import (
     BooleanField,
     ChoiceField,
     DateField,
     DateTimeField,
     DecimalField,
-    DjangoFieldType,
     DurationField,
     EmailField,
     Field,
@@ -332,7 +332,7 @@ class FilterMetaClass(SerializerMetaclass):
     @classmethod
     def _extract_django_model_fields(
             cls,
-            model_fields: list[DjangoFieldType],
+            model_fields: list[Any],
             options: FilterOptions,
             extra_kwargs: dict[str, dict[str, Any]],
             exclude_fields: set[str] | None=None,
@@ -384,7 +384,6 @@ class FilterMetaClass(SerializerMetaclass):
                 kwargs["lookups"] = ["pg_array"]
                 base_field = django_field.base_field.__class__.__name__
                 kwargs["child"] = DJANGO_FIELD_MAP.get(base_field, StringField)()
-
 
             kwargs.update(field_kwargs)
             filter_field = field_class(**kwargs)
@@ -467,9 +466,15 @@ class FilterMetaClass(SerializerMetaclass):
                 "lookup_expr": variant_expr,
                 "lookups": []
             }
-            if isinstance(lookups, dict):
-                field_kwargs.update(lookups[lookup])
-            variants.append((variant_name, field.clone(**field_kwargs)))
+
+            field_class = LOOKUP_DEFAULT_FIELD.get(lookup)
+            cloned_class = field.clone(**field_kwargs)
+
+            if field_class and field_class == ListField:
+                field_kwargs["child"] = cloned_class
+
+            lookup_field = field_class(**field_kwargs) if field_class else cloned_class
+            variants.append((variant_name, lookup_field))
 
         return variants
 
@@ -533,18 +538,18 @@ class FilterSet(Serializer, metaclass=FilterMetaClass):
 
         required_fields (List[str]): Field names that should be marked as required.
 
-        order_param (str): Query parameter name for ordering. Default is "order_by".
+        order_param (str): Query parameter name for ordering. The default is "order_by".
 
         order_fields (List[Tuple[str, str]]): Available ordering options as
             (query_value, model_field) tuples.
 
-        default_order_fields (List[str]): Default ordering when no order param provided.
+        default_order_fields (List[str]): Default ordering when no order param is provided.
 
         order_field_labels (List[Tuple[str, str]]): Human-readable labels for ordering
             options as (query_value, label) tuples.
 
         override_order_dir (Literal["asc", "desc"]): Override Django's default ordering
-            direction. Use "desc" to reverse the meaning of "-" prefix. Default is "asc".
+            direction. Use "desc" to reverse the meaning of the "-" prefix. The default is "asc".
 
         preprocessors (List[Callable[[FilterSet, QuerySet], QuerySet]]): Functions called
             before filtering. Each receives the filterset and queryset, returns queryset.
@@ -653,13 +658,14 @@ class FilterSet(Serializer, metaclass=FilterMetaClass):
     def filter_queryset(
             self,
             queryset: QuerySet,
+            ignore=None,
     ):
         """
         Apply validated filters to a queryset and return the filtered result.
 
         Args:
             queryset (QuerySet): The Django queryset to filter.
-
+            ignore (list[str], optional): List of field names to ignore. Defaults to None.
         Returns:
             QuerySet: The filtered queryset after applying all filters and processors.
 
@@ -670,12 +676,13 @@ class FilterSet(Serializer, metaclass=FilterMetaClass):
         options = self.get_options()
         validated_data = self.model_dump()
         queryset = self._apply_processors(queryset, "pre")
+        ignore = ignore or []
 
         q_objects = []
         for field_name, value in validated_data.items():
             field = self.fields.get(field_name)
-            if field is None:
-                continue
+            if field is None or field_name in ignore:
+                continue    # pragma: no cover
             result = field.apply_filter(
                 filterset=self, queryset=queryset, value=value
             )
