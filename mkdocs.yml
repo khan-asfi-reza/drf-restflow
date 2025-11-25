@@ -1,6 +1,6 @@
 site_name: drf-restflow
 site_description: Declarative library for Django REST Framework
-site_url: https://khan-asfi-reza.github.io/drf-restflow/
+site_url: https://restflow.khanasfireza.dev/
 repo_url: https://github.com/khan-asfi-reza/drf-restflow
 repo_name: khan-asfi-reza/drf-restflow
 edit_uri: edit/main/docs/
