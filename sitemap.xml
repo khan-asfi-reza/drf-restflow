@@ -1,59 +1,59 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
     <url>
-         <loc>https://khan-asfi-reza.github.io/drf-restflow/</loc>
+         <loc>https://restflow.khanasfireza.dev/</loc>
          <lastmod>2025-11-25</lastmod>
     </url>
     <url>
-         <loc>https://khan-asfi-reza.github.io/drf-restflow/changelog/</loc>
+         <loc>https://restflow.khanasfireza.dev/changelog/</loc>
          <lastmod>2025-11-25</lastmod>
     </url>
     <url>
-         <loc>https://khan-asfi-reza.github.io/drf-restflow/contributing/</loc>
+         <loc>https://restflow.khanasfireza.dev/contributing/</loc>
          <lastmod>2025-11-25</lastmod>
     </url>
     <url>
-         <loc>https://khan-asfi-reza.github.io/drf-restflow/api/filters/field-types/</loc>
+         <loc>https://restflow.khanasfireza.dev/api/filters/field-types/</loc>
          <lastmod>2025-11-25</lastmod>
     </url>
     <url>
-         <loc>https://khan-asfi-reza.github.io/drf-restflow/api/filters/field/</loc>
+         <loc>https://restflow.khanasfireza.dev/api/filters/field/</loc>
          <lastmod>2025-11-25</lastmod>
     </url>
     <url>
-         <loc>https://khan-asfi-reza.github.io/drf-restflow/api/filters/filterset/</loc>
+         <loc>https://restflow.khanasfireza.dev/api/filters/filterset/</loc>
          <lastmod>2025-11-25</lastmod>
     </url>
     <url>
-         <loc>https://khan-asfi-reza.github.io/drf-restflow/api/filters/inline-filterset/</loc>
+         <loc>https://restflow.khanasfireza.dev/api/filters/inline-filterset/</loc>
          <lastmod>2025-11-25</lastmod>
     </url>
     <url>
-         <loc>https://khan-asfi-reza.github.io/drf-restflow/getting-started/concepts/</loc>
+         <loc>https://restflow.khanasfireza.dev/getting-started/concepts/</loc>
          <lastmod>2025-11-25</lastmod>
     </url>
     <url>
-         <loc>https://khan-asfi-reza.github.io/drf-restflow/getting-started/installation/</loc>
+         <loc>https://restflow.khanasfireza.dev/getting-started/installation/</loc>
          <lastmod>2025-11-25</lastmod>
     </url>
     <url>
-         <loc>https://khan-asfi-reza.github.io/drf-restflow/getting-started/quickstart/</loc>
+         <loc>https://restflow.khanasfireza.dev/getting-started/quickstart/</loc>
          <lastmod>2025-11-25</lastmod>
     </url>
     <url>
-         <loc>https://khan-asfi-reza.github.io/drf-restflow/guide/</loc>
+         <loc>https://restflow.khanasfireza.dev/guide/</loc>
          <lastmod>2025-11-25</lastmod>
     </url>
     <url>
-         <loc>https://khan-asfi-reza.github.io/drf-restflow/guide/filtering/fields/</loc>
+         <loc>https://restflow.khanasfireza.dev/guide/filtering/fields/</loc>
          <lastmod>2025-11-25</lastmod>
     </url>
     <url>
-         <loc>https://khan-asfi-reza.github.io/drf-restflow/guide/filtering/filterset/</loc>
+         <loc>https://restflow.khanasfireza.dev/guide/filtering/filterset/</loc>
          <lastmod>2025-11-25</lastmod>
     </url>
     <url>
-         <loc>https://khan-asfi-reza.github.io/drf-restflow/tutorial/filtering/</loc>
+         <loc>https://restflow.khanasfireza.dev/tutorial/filtering/</loc>
          <lastmod>2025-11-25</lastmod>
     </url>
 </urlset>
