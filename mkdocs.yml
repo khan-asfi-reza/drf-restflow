@@ -1,0 +1,83 @@
+site_name: drf-restflow
+site_description: Declarative library for Django REST Framework
+site_url: https://khan-asfi-reza.github.io/drf-restflow/
+repo_url: https://github.com/khan-asfi-reza/drf-restflow
+repo_name: khan-asfi-reza/drf-restflow
+edit_uri: edit/main/docs/
+
+theme:
+  name: material
+  palette:
+    - scheme: slate
+      primary: teal
+      accent: teal
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+    - scheme: light
+      primary: teal
+      accent: teal
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+    - content.code.annotate
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.tabbed:
+      alternate_style: true
+  - tables
+  - attr_list
+  - md_in_html
+  - toc:
+      permalink: true
+
+plugins:
+  - search
+  - autorefs
+  - macros:
+      module_name: docs/macros
+
+nav:
+  - Home: index.md
+  - Getting Started:
+      - Installation: getting-started/installation.md
+      - Quick Start: getting-started/quickstart.md
+      - Basic Concepts: getting-started/concepts.md
+  - Tutorial:
+      - Filtering: tutorial/filtering.md
+  - Guide:
+      - Filtering:
+          - FilterSet: guide/filtering/filterset.md
+          - Fields: guide/filtering/fields.md
+  - API Reference:
+      - Filters:
+          - FilterSet: api/filters/filterset.md
+          - Field: api/filters/field.md
+          - Field Types: api/filters/field-types.md
+          - InlineFilterSet: api/filters/inline-filterset.md
+  - Contributing: contributing.md
+  - Changelog: changelog.md
+
+extra:
+  version:
+    provider: mike
+    default: latest
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/khan-asfi-reza/drf-restflow

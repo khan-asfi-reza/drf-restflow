@@ -1,0 +1,5 @@
+# All development dependencies
+-r requirements.txt
+-r requirements-test.txt
+-r requirements-lint.txt
+-r requirements-postgres.txt
