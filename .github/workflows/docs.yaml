@@ -11,18 +11,18 @@ on:
       - uv.lock
       - pyproject.toml
 
-permissions:
-  contents: write
-
 jobs:
   build-and-deploy:
     name: Build and Deploy Documentation
     runs-on: ubuntu-latest
-
+    environment: github-pages
+    permissions:
+      contents: write
+    concurrency:
+      group: ${{ github.workflow }}-${{ github.ref }}
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
+      - run: git fetch --no-tags --prune --depth=1 origin gh-pages
 
       - name: Install uv
         uses: astral-sh/setup-uv@v4
