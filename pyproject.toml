@@ -1,14 +1,64 @@
 [project]
 name = "drf-restflow"
-version = "0.1.0"
-description = "Django Rest Flow Application"
+description = "Declarative library for Django REST Framework"
 readme = "README.md"
+license = {text = "BSD-3-Clause"}
+dynamic = [ "version" ]
 requires-python = ">=3.10"
-dependencies = [
-    "django",
-    "djangorestframework",
-    "pytest>=8.3.5",
+authors = [
+    {name = "Khan Asfi Reza", email = "me@khanasfireza.dev"},
 ]
+keywords = [
+    "django",
+    "django-rest-framework",
+    "drf",
+    "filters",
+    "queryset",
+    "declarative",
+    "type-safe",
+    "fastapi",
+    "rest-api",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Web Environment",
+    "Framework :: Django",
+    "Framework :: Django :: 3.2",
+    "Framework :: Django :: 4.0",
+    "Framework :: Django :: 4.1",
+    "Framework :: Django :: 4.2",
+    "Framework :: Django :: 5.0",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: BSD License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Internet :: WWW/HTTP",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Typing :: Typed",
+]
+dependencies = [
+    "django>=3.2",
+    "djangorestframework>=3.14",
+]
+
+[project.urls]
+Homepage = "https://github.com/khan-asfi-reza/drf-restflow"
+Repository = "https://github.com/khan-asfi-reza/drf-restflow"
+Issues = "https://github.com/khan-asfi-reza/drf-restflow/issues"
+Changelog = "https://github.com/khan-asfi-reza/drf-restflow/releases"
+
+
+[tool.setuptools]
+
+[tool.setuptools.dynamic]
+version = { attr = "restflow.__version__" }
+
 
 [tool.setuptools.packages.find]
 where = ["."]
@@ -30,6 +80,13 @@ lint = [
 ]
 postgres = [
     "psycopg2-binary>=2.9.10",
+]
+docs = [
+    "mkdocs>=1.6.0",
+    "mkdocs-material>=9.5.0",
+    "mkdocs-autorefs>=1.2.0",
+    "pymdown-extensions>=10.11.0",
+    "mkdocs-macros-plugin>=1.3.7"
 ]
 
 [tool.pytest.ini_options]
@@ -62,6 +119,7 @@ exclude = [
     ".pytest_cache",
     ".ruff_cache",
     "migrations",
+    "docs"
 ]
 
 [tool.ruff.lint]
@@ -157,3 +215,4 @@ indent-style = "space"
 skip-magic-trailing-comma = false
 line-ending = "auto"
 preview = false
+
