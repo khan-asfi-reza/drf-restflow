@@ -82,7 +82,7 @@ def test_char_field_mapping():
     filterset = TestFilterSet()
     assert "char_field" in filterset.fields
     assert isinstance(filterset.fields["char_field"], StringField)
-    assert filterset.fields["char_field"].lookup_expr == "char_field"
+    assert filterset.fields["char_field"].filter_by == "char_field"
 
 
 def test_text_field_mapping():
@@ -314,7 +314,7 @@ def test_foreign_key_field_mapping():
 
     filterset = TestFilterSet()
     assert isinstance(filterset.fields["related_to"], IntegerField)
-    assert filterset.fields["related_to"].lookup_expr == "related_to__pk"
+    assert filterset.fields["related_to"].filter_by == "related_to__pk"
 
 
 def test_one_to_one_field_mapping():
@@ -327,7 +327,7 @@ def test_one_to_one_field_mapping():
 
     filterset = TestFilterSet()
     assert isinstance(filterset.fields["one_to_one"], IntegerField)
-    assert filterset.fields["one_to_one"].lookup_expr == "one_to_one__pk"
+    assert filterset.fields["one_to_one"].filter_by == "one_to_one__pk"
 
 
 def test_all_fields_together():
