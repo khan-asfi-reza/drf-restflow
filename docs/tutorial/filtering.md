@@ -763,6 +763,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+
 # Preprocessors
 def optimize_queries(filterset, queryset):
     queryset = queryset.select_related('author', 'category')
@@ -780,10 +781,12 @@ def optimize_queries(filterset, queryset):
 
     return queryset
 
+
 def add_annotations(filterset, queryset):
     return queryset.annotate(
         comment_count=Count('comments')
     )
+
 
 # Postprocessors
 def smart_distinct(filterset, queryset):
@@ -806,6 +809,7 @@ def monitor_performance(filterset, queryset):
 
     return queryset
 
+
 # FilterSet
 class ArticleFilterSet(FilterSet):
     # Text search
@@ -817,8 +821,8 @@ class ArticleFilterSet(FilterSet):
     views = IntegerField(min_value=0, lookups=["comparison"])
 
     # Related filters
-    author = IntegerField(lookup_expr="author__id")
-    category_slug = StringField(lookup_expr="category__slug")
+    author = IntegerField(filter_by="author__id")
+    category_slug = StringField(filter_by="category__slug")
     tags: ListField[int]
 
     # Custom filters

@@ -49,10 +49,11 @@ class ProductFilterSet(FilterSet):
 ```python
 from restflow.filters import FilterSet, StringField, IntegerField
 
+
 class ProductFilterSet(FilterSet):
     name = StringField(lookups=["icontains"])
     price = IntegerField(lookups=["comparison"], min_value=0)
-    category = IntegerField(lookup_expr="category__id")
+    category = IntegerField(filter_by="category__id")
 ```
 
 ### Model-Based Generation
@@ -230,7 +231,7 @@ class Meta:
             'validators': [custom_validator]          # Custom validators
         },
         'category': {
-            'lookup_expr': 'category__id',            # Custom lookup expression
+            'filter_by': 'category__id',            # Custom lookup expression
             'required': False
         },
         'status': {
@@ -243,8 +244,9 @@ class Meta:
 ```
 
 **extra_kwargs options:**
+- `db_field`: Corresponding model/queryset field
 - `lookups`: List of lookup expressions to generate
-- `lookup_expr`: Custom lookup expression
+- `filter_by`: Custom lookup expression
 - `required`: Make field required
 - `min_value`, `max_value`: Numeric validation
 - `min_length`, `max_length`: String validation
@@ -401,18 +403,94 @@ class ProductFilterSet(FilterSet):
     # Creates: views__gt, views__gte, views__lt, views__lte
 ```
 
+**Available Categories:**
+
+| Category Name | Lookups |
+| --- | --- |
+|`basic` | `["exact", "in", "isnull"]` |
+|`text` | `["icontains", "contains", "startswith", "endswith", "iexact"]` |
+|`comparison` | `["gt", "gte", "lt", "lte"]` |
+|`date` | `["date", "year", "month", "day", "week", "week_day", "quarter"]` |
+|`time` | `["time", "hour", "minute", "second"]` |
+|`postgres` | `["search", "trigram_similar", "unaccent"]` |
+|`pg_array` | `["contains", "overlaps", "contained_by"]` |
+
+
+
+When using type annotations, drf-restflow maps Python types to appropriate fields:
+
+| Python Type | Field Type | Lookup Categories |
+|-------------|------------|-------------------|
+| `str` | `StringField` | basic, text |
+| `int` | `IntegerField` | basic, comparison |
+| `float` | `FloatField` | basic, comparison |
+| `bool` | `BooleanField` | basic |
+| `datetime.date` | `DateField` | basic, comparison, date |
+| `datetime.datetime` | `DateTimeField` | basic, comparison, date, time |
+| `datetime.time` | `TimeField` | basic, comparison, time |
+| `decimal.Decimal` | `DecimalField` | basic, comparison |
+| `List[T]` | `ListField` | basic |
+| `Literal[...]` | `ChoiceField` | basic |
+| `Optional[T]` | Corresponding field | Same as T |
+
+
+> Note: The priority of `filter_by` is higher than `db_field`, if both mentioned then `filter_by` will take precedence,
+by default the field name is used as `db_field` which will perform the query
+
+```python
+class ProductFilter(FilterSet):
+    # While filtering queryset it will perform queryset.filter(price=<value>)
+    price = IntegerField()  
+```
+
+```python
+class ProductFilter(FilterSet):
+    # While filtering queryset it will perform queryset.filter(price=<value>)
+    price_value = IntegerField(db_field="price")  
+```
+
+
+```python
+class ProductFilter(FilterSet):
+    # While filtering queryset it will perform queryset.filter(price__gte=<value>)
+    price_value = IntegerField(filter_by="price__gte")  
+```
+
+
+### Lookups with method/filter_by
+Cannot generate lookup variants if `db_field` is unset and `lookups` 
+alongside `method` or `filter_by` is used. Always Set `db_field` 
+
+
+```python
+class ProductFilterSet(FilterSet):
+    # ❌ WRONG - Will raise assertion error as method is used and db_field is unset
+    price = IntegerField(method="custom_method", lookups=["gte", "lte"])
+    # ❌ WRONG - Will raise assertion error as filter_by is used and db_field is unset
+    price = IntegerField(filter_by="price__exact", lookups=["gte", "lte"])
+    # ✅ CORRECT 
+    # This will generate the lookup variants
+    # And if query param contains ?price=1, it will perform queryset.filter(price__exact=1)
+    # And for variants eg:
+    # ?price__gte=1 will perform queryset.filter(price__gte=1)
+    price = IntegerField(filter_by="price__exact", db_field="price", lookups=["gte", "lte"])
+    
+
+```
+
+
 ### Custom Lookup Expressions
 
 ```python
 class ProductFilterSet(FilterSet):
     # Filter by related field
-    category_name = StringField(lookup_expr="category__name__icontains")
+    category_name = StringField(filter_by="category__name__icontains")
 
     # Nested relationships
-    department = StringField(lookup_expr="category__department__name")
+    department = StringField(filter_by="category__department__name")
 
     # Multiple levels
-    region = StringField(lookup_expr="store__address__city__region__name")
+    region = StringField(filter_by="store__address__city__region__name")
 ```
 
 ### Negation
@@ -922,8 +1000,8 @@ class ProductFilterSet(FilterSet):
 from rest_framework.exceptions import ValidationError
 
 class ProductFilterSet(FilterSet):
-    min_price = IntegerField(lookup_expr="price__gte")
-    max_price = IntegerField(lookup_expr="price__lte")
+    min_price = IntegerField(filter_by="price__gte")
+    max_price = IntegerField(filter_by="price__lte")
 
     def validate(self, data):
         if 'min_price' in data and 'max_price' in data:
@@ -1002,8 +1080,8 @@ class Product(models.Model):
 
 class ProductFilterSet(FilterSet):
     # Filter by JSON key
-    brand = StringField(lookup_expr="metadata__brand")
-    color = StringField(lookup_expr="metadata__specs__color")
+    brand = StringField(filter_by="metadata__brand")
+    color = StringField(filter_by="metadata__specs__color")
 
 # ?brand=Apple
 # ?color=red
