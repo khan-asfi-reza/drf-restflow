@@ -1,20 +1,16 @@
 from collections.abc import Callable
-from typing import (
-    Any,
-    Literal,
-    Union,
-    cast,
-)
+from typing import Any, Literal, Union, cast
 
 from django.core.handlers.wsgi import WSGIRequest
 from django.db.models import ForeignKey, Model, OneToOneField, Q, QuerySet
 from django.db.models.constants import LOOKUP_SEP
+from django.http import HttpRequest
 from rest_framework import fields as drf_fields
 from rest_framework.request import Request
 from rest_framework.serializers import Serializer, SerializerMetaclass
 
-from restflow.filters import LOOKUP_DEFAULT_FIELD
 from restflow.filters.fields import (
+    LOOKUP_DEFAULT_FIELD,
     BooleanField,
     ChoiceField,
     DateField,
@@ -234,8 +230,7 @@ class FilterMetaClass(SerializerMetaclass):
         annotated_names = {name for name, _ in annotated_fields}
 
         for field_name, field in explicit_fields + annotated_fields:
-            field.ensure_lookup_expr(field_name)
-
+            field.ensure_db_field(field_name)
 
         model_fields = cls._generate_model_fields(
             options, annotated_names | explicit_names
@@ -296,11 +291,12 @@ class FilterMetaClass(SerializerMetaclass):
             # with the appropriate type by passing arguments of the declared field into the generated field.
             if field and field.__class__ is Field:
                 annotated.append((field_name, field.clone(
-                    _type=field_type, field_name=field_name
+                    _type=field_type,
+                    field_name=field_name,
                 )))
                 continue
 
-            default_kwargs = {"allow_negate": options.allow_negate}
+            default_kwargs = {"allow_negate": options.allow_negate, "db_field": field_name}
             default_kwargs.update(options.extra_kwargs.get(field_name, {}))
             field_obj = get_field_from_type(
                 field_type,
@@ -359,12 +355,13 @@ class FilterMetaClass(SerializerMetaclass):
             field_kwargs = extra_kwargs.get(field_name, {})
 
             kwargs = {}
-            kwargs.setdefault("lookup_expr", f"{django_field.name}")
+            kwargs.setdefault("filter_by", f"{django_field.name}")
+            kwargs.setdefault("db_field", f"{django_field.name}")
             kwargs.setdefault("lookups", [])
 
             if isinstance(django_field, (ForeignKey, OneToOneField)):
                 # For relations, use the related field's ID
-                kwargs["lookup_expr"] = f"{django_field.name}__pk"
+                kwargs["filter_by"] = f"{django_field.name}__pk"
                 if field_name in options.related_fields:
                     related_fields = cls._extract_django_model_fields(
                         model_fields=django_field.related_model._meta.get_fields(),
@@ -450,7 +447,7 @@ class FilterMetaClass(SerializerMetaclass):
     @classmethod
     def _create_lookup_variants(cls, field_name: str, field: Field) -> FieldItems:
         # Create additional fields for each lookup type (e.g., field__gte, field__lte)
-        if field.method or callable(field.lookup_expr):
+        if field.method or callable(field.filter_by):
             return []
 
 
@@ -461,9 +458,9 @@ class FilterMetaClass(SerializerMetaclass):
 
         for lookup in lookup_fields:
             variant_name = f"{field_name}{LOOKUP_SEP}{lookup}"
-            variant_expr = f"{field.lookup_expr}{LOOKUP_SEP}{lookup}"
+            variant_expr = f"{field.db_field}{LOOKUP_SEP}{lookup}"
             field_kwargs = {
-                "lookup_expr": variant_expr,
+                "filter_by": variant_expr,
                 "lookups": []
             }
 
@@ -584,7 +581,7 @@ class FilterSet(Serializer, metaclass=FilterMetaClass):
             class ProductFilterSet(FilterSet):
                 name = StringField(lookups=["icontains"])
                 price = IntegerField(lookups=["gte", "lte"])
-                category = StringField(lookup_expr="category__name")
+                category = StringField(filter_by="category__name")
 
         Using a Django model with Meta:
 
@@ -611,7 +608,7 @@ class FilterSet(Serializer, metaclass=FilterMetaClass):
     def __init__(
             self,
             data=None,
-            request: Union[Request, WSGIRequest] = None,
+            request: Request | WSGIRequest | HttpRequest = None,
     ):
         self.request = request
         # Flexibility for users
@@ -736,7 +733,7 @@ class InlineFilterSet:
             preprocessors: list[Callable[[FilterSet, QuerySet], Any]] | None = None,
             operator: Literal["AND", "OR", "XOR"] = "AND",
             allow_negate:bool = True,
-    ):
+    ) -> type[FilterSet]:
         """
         Create a FilterSet class dynamically without defining a class explicitly.
 

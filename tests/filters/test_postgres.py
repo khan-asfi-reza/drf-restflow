@@ -129,7 +129,7 @@ def test_filter_array_field_contains():
     )
 
     class TestFilterSet(FilterSet):
-        tags = ListField(child=StringField(), lookup_expr="tags__contains")
+        tags = ListField(child=StringField(), filter_by="tags__contains")
 
     filterset = TestFilterSet(data={"tags": ["python"]})
     qs = PostgresModel.objects.all()
@@ -164,7 +164,7 @@ def test_filter_array_field_overlaps():
     )
 
     class TestFilterSet(FilterSet):
-        tags = ListField(child=StringField(), lookup_expr="tags__overlap")
+        tags = ListField(child=StringField(), filter_by="tags__overlap")
 
     filterset = TestFilterSet(data={"tags": ["python", "javascript"]})
     qs = PostgresModel.objects.all()
@@ -186,7 +186,7 @@ def test_filter_integer_array():
 
     class TestFilterSet(FilterSet):
         integer_array = ListField(
-            child=IntegerField(), lookup_expr="integer_array__contains"
+            child=IntegerField(), filter_by="integer_array__contains"
         )
 
     filterset = TestFilterSet(data={"integer_array": [10]})
@@ -214,7 +214,7 @@ def test_filter_array_field_contained_by():
 
     class TestFilterSet(FilterSet):
         integer_array = ListField(
-            child=IntegerField(), lookup_expr="integer_array__contained_by"
+            child=IntegerField(), filter_by="integer_array__contained_by"
         )
 
     filterset = TestFilterSet(data={"integer_array": [1, 2, 3, 4, 5]})
@@ -237,7 +237,7 @@ def test_filter_string_array():
 
     class TestFilterSet(FilterSet):
         string_array = ListField(
-            child=StringField(), lookup_expr="string_array__contains"
+            child=StringField(), filter_by="string_array__contains"
         )
 
     filterset = TestFilterSet(data={"string_array": ["hello"]})
@@ -274,10 +274,10 @@ def test_filter_multiple_array_fields():
 
     class TestFilterSet(FilterSet):
         integer_array = ListField(
-            child=IntegerField(), lookup_expr="integer_array__contains"
+            child=IntegerField(), filter_by="integer_array__contains"
         )
         string_array = ListField(
-            child=StringField(), lookup_expr="string_array__contains"
+            child=StringField(), filter_by="string_array__contains"
         )
 
     filterset = TestFilterSet(data={"integer_array": [1], "string_array": ["a"]})
@@ -339,7 +339,7 @@ def test_array_field_with_ordering():
 
     class TestFilterSet(FilterSet):
         integer_array = ListField(
-            child=IntegerField(), lookup_expr="integer_array__contains"
+            child=IntegerField(), filter_by="integer_array__contains"
         )
 
         class Meta:

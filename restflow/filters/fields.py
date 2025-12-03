@@ -174,7 +174,7 @@ class Field(drf_fields.Field):
           (e.g., "price__gte", "price__lte" from lookups=["gte", "lte"])
 
     Parameters:
-        lookup_expr: Defines how to filter the queryset.
+        filter_by: Defines how to filter the queryset.
             Can be:
             - String: Django ORM lookup expression (e.g., "name__icontains", "price__gte")
             - Callable: Function that receives (value) and returns either a dict
@@ -193,7 +193,7 @@ class Field(drf_fields.Field):
         method: Custom filtering method. Can be:
             - Callable: Function with signature (instance, request, queryset, value) -> QuerySet or Q
             - String: Name of a method on the FilterSet class
-            Cannot be used with lookup_expr parameter.
+            Cannot be used with filter_by parameter.
 
         allow_negate: If False, prevents automatic creation of the negation field.
             Default is True.
@@ -209,7 +209,7 @@ class Field(drf_fields.Field):
     Examples:
         Basic field with simple lookup::
 
-            name = StringField(lookup_expr="name__icontains")
+            name = StringField(filter_by="name__icontains")
 
         Field with multiple lookups::
 
@@ -224,12 +224,12 @@ class Field(drf_fields.Field):
 
             date_range = Field(method=filter_by_date_range)
 
-        Field with callable lookup_expr::
+        Field with callable filter_by::
 
             def custom_lookup(value):
                 return Q(name__icontains=value) | Q(description__icontains=value)
 
-            search = StringField(lookup_expr=custom_lookup)
+            search = StringField(filter_by=custom_lookup)
 
     See Also:
         - IntegerField, StringField, DateTimeField: Specialized field types
@@ -242,28 +242,35 @@ class Field(drf_fields.Field):
     def __init__(
             self,
             *,
-            lookup_expr: str | Callable[[Any], Any] | None = None,
+            db_field="",
+            filter_by: str | Callable[[Any], Any] | dict | None = None,
             lookups: LookupsType = None,
             method: Callable[[Any, QuerySet, Any], tuple[Q,QuerySet] | Q | QuerySet] | str | None = None,
-            description: str | None = None,
             negate: bool = False,
             required: bool = False,
             allow_negate: bool = True,
             **kwargs,
     ):
-        if method and lookup_expr:
-            msg = "`method` and `lookup_expr` cannot be used together."
+        if method and filter_by:
+            msg = "`method` and `filter_by` cannot be used together."
             raise AssertionError(msg)
 
         if method and (not callable(method) and not isinstance(method, str)):
             msg = "`method` must be a callable or a string."
             raise TypeError(msg)
 
-        self._validate_lookup_expr(lookup_expr, lookups)
-        self.lookup_expr = lookup_expr
+        if (method or filter_by) and lookups and not db_field:
+            msg = (
+                "Cannot generate lookup variants: `db_field` must be set when using `lookups` "
+                "alongside `method` or `filter_by`. Set `db_field` to the base field name "
+                "(e.g., `db_field='price'` to generate 'price__gte', 'price__lte')."
+            )
+            raise AssertionError(msg)
+
+        self.db_field = db_field
+        self.filter_by = filter_by
         self.lookups = process_lookups(lookups, self.lookup_categories)
         self.method = method
-        self.description = description
         self.negate = negate
         self.allow_negate = allow_negate
         kwargs["required"] = required
@@ -275,23 +282,14 @@ class Field(drf_fields.Field):
         self.clone = self.__create_clone_method(**kwargs)
         super().__init__(**kwargs)
 
-    @staticmethod
-    def _validate_lookup_expr(lookup_expr, lookups):
-        if lookup_expr and isinstance(lookup_expr, str) and lookups:
-            suffix = lookup_expr.rsplit("__", 1)[-1]
-            if suffix in LOOKUP_SET:
-                msg = (f"Invalid field configuration, `lookup_expr` ({lookup_expr}) already ends with a lookup "
-                       f"suffix ('{lookup_expr}'), but `lookups` is also specified.")
-                raise ValueError(msg)
-
 
     def __create_clone_method(self, **kwargs):
         def clone(_type=None, field_name=None, **inner_kwargs):
             default_kwargs = dict(
-                lookup_expr=self.lookup_expr,
+                filter_by=self.filter_by,
+                db_field=self.db_field,
                 lookups=self.lookups,
                 method=self.method,
-                description=self.description,
                 negate=self.negate,
                 **kwargs,
             )
@@ -301,15 +299,19 @@ class Field(drf_fields.Field):
             return self.__class__(**default_kwargs)
         return clone
 
-    def ensure_lookup_expr(self, lookup_expr: str):
-        if not (self.lookup_expr or self.method):
-            self.lookup_expr = lookup_expr
+    def ensure_db_field(self, db_field: str):
+        if not (self.filter_by or self.method or self.db_field):
+            self.db_field = db_field
 
     def get_method(self, filterset=None):
         method = self.method
         if isinstance(method, str):
             method = getattr(filterset, method)
         return method
+
+    @property
+    def _filter_expression(self):
+        return self.filter_by or self.db_field or self.field_name
 
     def apply_filter(
             self,
@@ -345,26 +347,24 @@ class Field(drf_fields.Field):
                 queryset = qs
 
         else:
-            lookup_expr = self.lookup_expr
+            filter_by = self._filter_expression
 
-            if lookup_expr is None:
-                lookup_expr = self.field_name
             # Lookup expression can either be a string or a function
-            if isinstance(lookup_expr, str):
-                q = Q(**{lookup_expr: value})
+            if isinstance(filter_by, str):
+                q = Q(**{filter_by: value})
 
-            elif lookup_expr is not None and callable(lookup_expr):
-                lookup_expr = lookup_expr(value)
-                if isinstance(lookup_expr, dict):
-                    q = Q(**lookup_expr)
+            elif filter_by is not None and callable(filter_by):
+                filter_by = filter_by(value)
+                if isinstance(filter_by, dict):
+                    q = Q(**filter_by)
 
-                elif isinstance(lookup_expr, Q):
-                    q = lookup_expr
+                elif isinstance(filter_by, Q):
+                    q = filter_by
 
                 else:
                     msg = (
-                        f"Invalid lookup expression returned from lookup_expr "
-                        f"function: `{lookup_expr}`, must be a `dict` or `django.models.Q` object"
+                        f"Invalid lookup expression returned from filter_by "
+                        f"function: `{filter_by}`, must be a `dict` or `django.models.Q` object"
                     )
                     raise AssertionError(
                         msg
@@ -377,7 +377,8 @@ class Field(drf_fields.Field):
     def __str__(self):
         return (
             f"{self.__class__.__name__}(field_name='{self.field_name}',"
-            f"lookup_expr='{self.lookup_expr}', "
+            f"db_field={self.db_field,}"
+            f"filter_by='{self.filter_by}', "
             f"lookups='{self.lookups}', "
             f"method='{self.method}')"
         )
@@ -554,7 +555,7 @@ class OrderField(MultipleChoiceField):
         kwargs.pop("distinct", None)
         kwargs.pop("distinct_order", None)
         kwargs.pop("exclude", None)
-        kwargs.pop("lookup_expr", "")
+        kwargs.pop("filter_by", "")
         kwargs.pop("lookups", None)
         kwargs.setdefault("allow_negate", True)
         self.fields = self.process_fields(fields)
@@ -627,7 +628,7 @@ class ListField(
         child: A DRF field instance that validates individual list items.
             For example, IntegerField() for a list of integers.
 
-        lookup_expr: Django ORM lookup expression. Defaults to "field_name__in"
+        filter_by: Django ORM lookup expression. Defaults to "field_name__in"
             when created from type annotations like List[int].
 
         lookups: Additional lookup variants to generate.
@@ -642,8 +643,8 @@ class ListField(
             from restflow.fields import ListField, IntegerField
 
             class ProductFilterSet(FilterSet):
-                ids = ListField(child=IntegerField(), lookup_expr="id__in")
-                tags = ListField(child=StringField(), lookup_expr="tags__name__in")
+                ids = ListField(child=IntegerField(), filter_by="id__in")
+                tags = ListField(child=StringField(), filter_by="tags__name__in")
 
         Using type annotations::
 
@@ -669,7 +670,7 @@ class ListField(
             self,
             *,
             child,
-            lookup_expr: str | None = None,
+            filter_by: str | None = None,
             lookups: list[str] | None = None,
             method: Callable[[Request, QuerySet, Any], QuerySet] | None = None,
             description: str | None = None,
@@ -679,7 +680,7 @@ class ListField(
         child.source = None
         super().__init__(
             child=child,
-            lookup_expr=lookup_expr,
+            filter_by=filter_by,
             lookups=lookups,
             method=method,
             description=description,
@@ -709,7 +710,7 @@ class RelatedField(Field):
         self.fields = fields
         self.extra_kwargs = extra_kwargs or {}
         self.exclude = exclude or []
-        super().__init__(lookup_expr=None, **kwargs)
+        super().__init__(filter_by=None, **kwargs)
 
     def __create_clone_method(self, **__):
         return # pragma: no cover
@@ -776,7 +777,7 @@ def get_field_from_type(data_type, field_name: str | None = None, **field_kwargs
         args = get_args(data_type)
         data_type = args[0] if len(args) >= 1 else str
         field_kwargs["child"] = get_field_from_type(data_type)
-        field_kwargs["lookup_expr"] = f"{field_name}__in"
+        field_kwargs["filter_by"] = f"{field_name}__in"
         field_class = ListField
 
     if not field_class:

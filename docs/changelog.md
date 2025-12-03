@@ -5,6 +5,51 @@ All notable changes to drf-restflow will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.0a2] - 2025-12-03
+
+### Breaking Changes
+
+- **Renamed `lookup_expr` to `filter_by`**:
+  -  All Field classes now use `filter_by` parameter instead of `lookup_expr` for defining filter behavior. 
+     Update all field definitions: `lookup_expr="name__icontains"` becomes `filter_by="name__icontains"`
+  - Internal method `ensure_lookup_expr()` renamed to `ensure_db_field()`
+
+- **Removed `description` parameter**: Field's `description` parameter has been removed
+  - Use Django REST Framework's `help_text` parameter instead for field documentation
+
+### Added
+
+- **db_field parameter**: New parameter for dynamic lookup field generation
+  - Allows creating filter fields with different names that map to the same database field
+  - Example: `product_price = IntegerField(db_field="price", lookups=["comparison"])` creates multiple filters (product_price, product_price__gt, etc.) that all filter against the "price" database field
+  - Enables lookup generation when using `method` or custom `filter_by` functions
+    
+- **Enhanced validation**: Added validation to ensure `db_field` is set when using `lookups` with custom `method` or `filter_by` parameters
+  - Provides clear error messages with examples when validation fails
+
+### Changed
+
+- Improved filter field handling with better separation between field name (API) and database field name (ORM queries)
+- Enhanced error messages with more descriptive and actionable text
+- Model-based field generation now automatically sets both `filter_by` and `db_field` parameters
+- Related field filtering (ForeignKey, OneToOneField) correctly sets both parameters
+
+### Documentation
+
+- Updated all references from `lookup_expr` to `filter_by` across documentation
+- Added comprehensive examples for `db_field` parameter usage
+- Expanded FilterSet and Field guides with new parameter explanations
+- Updated tutorial and quick start guides with new syntax
+
+
+### Migration from 1.0.0a1
+
+1. Replace `lookup_expr` with `filter_by` in all FilterSet field definitions
+2. Replace `description` parameter with `help_text` if used
+3. Custom filter method signatures remain unchanged and compatible
+
+
+
 ## [1.0.0a1] - 2025-11-25
 
 ### Added

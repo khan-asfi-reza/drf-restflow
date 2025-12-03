@@ -111,6 +111,23 @@ class ProductFilterSet(FilterSet):
 # - price!, price__gt!, price__gte!, ... (negations)
 ```
 
+
+### Lookup generation using `db_field`
+Generate multiple filter variants from a single field definition:
+
+```python
+class ProductFilterSet(FilterSet):
+    product_price = IntegerField(db_field="price", lookups=["comparison"])
+
+# Automatically generates:
+# - product_price (exact match)
+# - product_price__gt, product_price__gte, product_price__lt, product_price__lte (comparisons)
+# - product_price!, product_price__gt!, product_price__gte!, ... (negations)
+# But these filters will internally run orm filter by the following method `queryset.filter_by(price=<value>)`
+```
+
+
+
 ### Type-Safe Validation
 Built on DRF's validation system with automatic type conversion and detailed error messages:
 
