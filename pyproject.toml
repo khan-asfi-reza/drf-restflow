@@ -2,11 +2,12 @@
 name = "drf-restflow"
 description = "A Declarative library for Django REST Framework"
 readme = "README.md"
-license = {text = "BSD-3-Clause"}
+license = "BSD-3-Clause"
+license-files = ["LICENSE"]
 dynamic = [ "version" ]
 requires-python = ">=3.10"
 authors = [
-    {name = "Khan Asfi Reza", email = "me@khanasfireza.dev"},
+    {name = "Khan Asfi Reza", email = "mail@khanasfireza.dev"},
 ]
 keywords = [
     "django",
@@ -29,7 +30,6 @@ classifiers = [
     "Framework :: Django :: 4.2",
     "Framework :: Django :: 5.0",
     "Intended Audience :: Developers",
-    "License :: OSI Approved :: BSD License",
     "Operating System :: OS Independent",
     "Programming Language :: Python",
     "Programming Language :: Python :: 3",

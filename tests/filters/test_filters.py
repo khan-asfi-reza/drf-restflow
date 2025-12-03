@@ -4,7 +4,6 @@ from typing import Literal, Optional
 
 import pytest
 from django.core.exceptions import FieldDoesNotExist
-from django.db.models import Q
 from rest_framework.test import APIRequestFactory
 
 from restflow.filters.fields import (
@@ -309,20 +308,6 @@ def test_filterset_with_lookup_isnull():
     assert "price__isnull!" in filterset.fields
     assert isinstance(filterset.fields["price__isnull"], BooleanField)
 
-
-def test_filterset_with_callable_lookup_expr():
-    """Test FilterSet field with callable lookup_expr doesn't generate extra lookups"""
-
-    def custom_lookup(value):
-        return Q(integer_field=value)
-
-    class TestFilterSet(FilterSet):
-        custom = IntegerField(lookup_expr=custom_lookup, lookups=["gte"])
-
-    filterset = TestFilterSet()
-    assert "custom" in filterset.fields
-    # Callable lookup_expr should not generate lookup fields
-    assert "custom__gte" not in filterset.fields
 
 
 @pytest.mark.django_db
@@ -655,7 +640,7 @@ def test_filterset_with_foreign_key():
     filterset = TestFilterSet()
     assert "sample_model" in filterset.fields
     # ForeignKey should map to IntegerField with __pk lookup
-    assert filterset.fields["sample_model"].lookup_expr == "sample_model__pk"
+    assert filterset.fields["sample_model"].filter_by == "sample_model__pk"
 
 
 

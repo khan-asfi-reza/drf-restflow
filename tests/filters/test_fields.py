@@ -112,9 +112,9 @@ class FieldBaseTest:
         return qs
 
 
-    def _assert_lookup_expr_apply_filter(self, field, negate=False):
-        # This makes sure the apply_filter logic is properly handled for variants for lookup_expr
-        # For string, callable and dict lookup_expr
+    def _assert_filter_by_apply_filter(self, field, negate=False):
+        # This makes sure the apply_filter logic is properly handled for variants for filter_by
+        # For string, callable and dict filter_by
         for input_value in self.valid_inputs.values():
             qs = self.make_qs(input_value)
             _actual_qs, actual_q = field.apply_filter(None, qs, input_value)
@@ -132,26 +132,26 @@ class FieldBaseTest:
             _actual_qs, _ = field.apply_filter(filterset, qs, input_value)
             assert qs == _actual_qs, f"input value: {input_value!r}"
 
-    def test_field_apply_filter_string_lookup_expr(self):
-        # Tests if `lookup_expr` as a string is returning the valid Q object
-        field = self.get_field(lookup_expr=f"field{self.filter_lookup_suffix}",)
-        self._assert_lookup_expr_apply_filter(field)
-        field_negated = self.get_field(lookup_expr=f"field{self.filter_lookup_suffix}", negate=True)
-        self._assert_lookup_expr_apply_filter(field_negated, negate=True)
+    def test_field_apply_filter_string_filter_by(self):
+        # Tests if `filter_by` as a string is returning the valid Q object
+        field = self.get_field(filter_by=f"field{self.filter_lookup_suffix}",)
+        self._assert_filter_by_apply_filter(field)
+        field_negated = self.get_field(filter_by=f"field{self.filter_lookup_suffix}", negate=True)
+        self._assert_filter_by_apply_filter(field_negated, negate=True)
 
-    def test_field_apply_filter_func_lookup_expr(self):
-        # Tests if `lookup_expr` as a function is returning the valid Q object
+    def test_field_apply_filter_func_filter_by(self):
+        # Tests if `filter_by` as a function is returning the valid Q object
         # It should return a Q object with Q(field=x)
-        field = self.get_field(lookup_expr=lambda x: Q(**{
+        field = self.get_field(filter_by=lambda x: Q(**{
             f"field{self.filter_lookup_suffix}": x
         }))
-        self._assert_lookup_expr_apply_filter(field)
+        self._assert_filter_by_apply_filter(field)
 
-    def test_field_apply_filter_dict_lookup_expr(self):
-        # Tests if `lookup_expr` as a function is returning the valid Q object
+    def test_field_apply_filter_dict_filter_by(self):
+        # Tests if `filter_by` as a function is returning the valid Q object
         # It should return a Q object with Q(field=x)
-        field = self.get_field(lookup_expr=lambda x: {f"field{self.filter_lookup_suffix}": x})
-        self._assert_lookup_expr_apply_filter(field)
+        field = self.get_field(filter_by=lambda x: {f"field{self.filter_lookup_suffix}": x})
+        self._assert_filter_by_apply_filter(field)
 
     def test_field_apply_filter_method_as_callable(self):
         # Tests if the filter method is being called with the correct parameters
@@ -178,7 +178,7 @@ class FieldBaseTest:
         """
         Ensure that valid values return the expected validated data.
         """
-        field = self.get_field(lookup_expr="lookup")
+        field = self.get_field(filter_by="lookup")
         for input_value, expected_output in get_items(self.valid_inputs):
             assert (
                 field.run_validation(input_value) == expected_output
@@ -188,7 +188,7 @@ class FieldBaseTest:
         """
         Ensure that invalid values raise the expected validation error.
         """
-        field = self.get_field(lookup_expr="lookup")
+        field = self.get_field(filter_by="lookup")
         for input_value, expected_failure in get_items(self.invalid_inputs):
             with pytest.raises(serializers.ValidationError) as exc_info:
                 field.run_validation(input_value)
@@ -200,31 +200,31 @@ class FieldBaseTest:
             self.get_field(method=1)
 
 
-    def test_validate_lookup_expr(self):
-        # `lookup_expr` should not end with a lookup if `lookups` are specified.
-        with pytest.raises(ValueError):
-            self.get_field(lookup_expr="field__gte", lookups=["lt"])
+    def test_validate_lookups(self):
+        # `db_field` is not specified then setting lookups will raise error.
+        with pytest.raises(AssertionError):
+            self.get_field(filter_by="field__gte", lookups=["lt"])
 
     @pytest.mark.parametrize(
         ("lookup_param", "val"),
         [
-            ("lookup_expr", "val"),
-            ("lookup_expr", lambda v: Q(a=v)),
+            ("filter_by", "val"),
+            ("filter_by", lambda v: Q(a=v)),
         ],
     )
-    def test_field_lookup_expr_param(self, lookup_param, val):
+    def test_field_filter_by_param(self, lookup_param, val):
         """
         Ensure that the lookup field is correct.
         """
         field = self.get_field(**{lookup_param: val})
-        assert field.lookup_expr == val
+        assert field.filter_by == val
 
 
-    def test_field_method_and_lookup_expr_conflict(self):
-        """Test that method and lookup_expr cannot be used together"""
+    def test_field_method_and_filter_by_conflict(self):
+        """Test that method and filter_by cannot be used together"""
         with pytest.raises(AssertionError) as exc:
-            self.get_field(method="filter_method", lookup_expr="field__gte")
-        assert "`method` and `lookup_expr` cannot be used together" in str(exc.value)
+            self.get_field(method="filter_method", filter_by="field__gte")
+        assert "`method` and `filter_by` cannot be used together" in str(exc.value)
 
     def test_field_get_method_as_string(self):
         """Test get_method when `method` is a string"""
@@ -271,12 +271,12 @@ class FieldBaseTest:
     )
     def test_lookups_with_iterable(self, param, expected):
         # Tests dict, list, tuple variations of process lookups with categories.
-        field = self.get_field(lookups=param)
+        field = self.get_field(db_field="db_field", lookups=param)
         assert sorted(field.lookups) == sorted(expected)
 
     def test_lookups_with_string_all(self, ):
         """Test process_lookups with '__all__', it should return field default lookups"""
-        field = self.get_field(lookups="__all__")
+        field = self.get_field(db_field="db_field", lookups="__all__")
         assert sorted(field.lookups) == sorted(process_lookups(
             field.lookup_categories, []
         ))
@@ -517,7 +517,7 @@ class BaseListFieldTest(FieldBaseTest):
         """
         Ensure that invalid values raise the expected validation error.
         """
-        field = self.get_field(lookup_expr="lookup")
+        field = self.get_field(filter_by="lookup")
         for input_value, _expected_failure in get_items(self.invalid_inputs):
             with pytest.raises(serializers.ValidationError):
                 field.run_validation(input_value)
@@ -656,13 +656,13 @@ def test_field_apply_filter_with_method_returning_q():
 
 
 @pytest.mark.django_db
-def test_field_apply_filter_with_string_lookup_expr():
-    """Test apply_filter with string lookup_expr"""
+def test_field_apply_filter_with_string_filter_by():
+    """Test apply_filter with string filter_by"""
     from django.db.models import Q, QuerySet
 
     from tests.models import SampleModel
 
-    field = IntegerField(lookup_expr="integer_field__gte")
+    field = IntegerField(filter_by="integer_field__gte")
     qs = SampleModel.objects.all()
     result_qs, q = field.apply_filter(None, qs, 10)
 
@@ -671,8 +671,8 @@ def test_field_apply_filter_with_string_lookup_expr():
 
 
 @pytest.mark.django_db
-def test_field_apply_filter_with_callable_lookup_expr_returning_dict():
-    """Test apply_filter with callable lookup_expr returning dict"""
+def test_field_apply_filter_with_callable_filter_by_returning_dict():
+    """Test apply_filter with callable filter_by returning dict"""
     from django.db.models import Q
 
     from tests.models import SampleModel
@@ -680,7 +680,7 @@ def test_field_apply_filter_with_callable_lookup_expr_returning_dict():
     def lookup_func(value):
         return {"integer_field__gte": value}
 
-    field = IntegerField(lookup_expr=lookup_func)
+    field = IntegerField(filter_by=lookup_func)
     qs = SampleModel.objects.all()
     _result_qs, q = field.apply_filter(None, qs, 10)
 
@@ -688,12 +688,12 @@ def test_field_apply_filter_with_callable_lookup_expr_returning_dict():
 
 
 @pytest.mark.django_db
-def test_field_apply_filter_with_callable_lookup_expr_returning_q():
-    """Test apply_filter with callable lookup_expr returning Q object"""
+def test_field_apply_filter_with_callable_filter_by_returning_q():
+    """Test apply_filter with callable filter_by returning Q object"""
     def lookup_func(value):
         return Q(integer_field__gte=value)
 
-    field = IntegerField(lookup_expr=lookup_func)
+    field = IntegerField(filter_by=lookup_func)
     qs = SampleModel.objects.all()
     _result_qs, q = field.apply_filter(None, qs, 10)
 
@@ -701,12 +701,12 @@ def test_field_apply_filter_with_callable_lookup_expr_returning_q():
 
 
 @pytest.mark.django_db
-def test_field_apply_filter_with_callable_lookup_expr_invalid_return():
-    """Test apply_filter with callable lookup_expr returning invalid type"""
+def test_field_apply_filter_with_callable_filter_by_invalid_return():
+    """Test apply_filter with callable filter_by returning invalid type"""
     def lookup_func(value):
         return "invalid"
 
-    field = IntegerField(lookup_expr=lookup_func)
+    field = IntegerField(filter_by=lookup_func)
     qs = SampleModel.objects.all()
 
     with pytest.raises(AssertionError) as exc:
@@ -717,7 +717,7 @@ def test_field_apply_filter_with_callable_lookup_expr_invalid_return():
 @pytest.mark.django_db
 def test_field_apply_filter_with_exclude():
     """Test apply_filter with negate=True"""
-    field = IntegerField(lookup_expr="integer_field", negate=True)
+    field = IntegerField(filter_by="integer_field", negate=True)
     qs = SampleModel.objects.all()
     _result_qs, q = field.apply_filter(None, qs, 10)
     assert isinstance(q, Q)
@@ -727,7 +727,7 @@ def test_field_apply_filter_with_exclude():
 
 def test_field_str_and_repr():
     """Test __str__ and __repr__ methods"""
-    field = IntegerField(lookup_expr="price__gte")
+    field = IntegerField(filter_by="price__gte")
     field.field_name = "price"
     str_repr = str(field)
     assert "IntegerField" in str_repr
@@ -890,7 +890,7 @@ def test_get_field_from_type_with_list():
     field = get_field_from_type(list[int], field_name="ids")
     assert isinstance(field, ListField)
     assert isinstance(field.child, IntegerField)
-    assert field.lookup_expr == "ids__in"
+    assert field.filter_by == "ids__in"
 
 
 def test_get_field_from_type_with_bare_list():
@@ -898,13 +898,13 @@ def test_get_field_from_type_with_bare_list():
     field = get_field_from_type(list, field_name="items")
     assert isinstance(field, ListField)
     assert isinstance(field.child, StringField)  # Defaults to str
-    assert field.lookup_expr == "items__in"
+    assert field.filter_by == "items__in"
 
 
 def test_choice_field():
     """Test ChoiceField basic functionality"""
     field = ChoiceField(
-        choices=[("a", "Option A"), ("b", "Option B")], lookup_expr="choice_field"
+        choices=[("a", "Option A"), ("b", "Option B")], filter_by="choice_field"
     )
     assert field.run_validation("a") == "a"
 
@@ -913,7 +913,7 @@ def test_choice_field():
 def test_multiple_choice_field():
     """Test MultipleChoiceField basic functionality"""
     field = MultipleChoiceField(
-        choices=[("a", "Option A"), ("b", "Option B")], lookup_expr="choices"
+        choices=[("a", "Option A"), ("b", "Option B")], filter_by="choices"
     )
     result = field.run_validation(["a", "b"])
     assert sorted(result) == ["a", "b"]

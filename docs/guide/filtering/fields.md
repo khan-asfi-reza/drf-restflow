@@ -57,6 +57,42 @@ Complete guide to all field types, lookups, type annotations, PostgreSQL feature
 
 ## Field Basics
 
+### Field basic arguments
+
+| Field | Description                                                                                     |
+| ---- |-------------------------------------------------------------------------------------------------|
+| `db_field` | corresponds to the model/queryset field                                                         |
+| `filter_by` | custom filter by expression, can be a string, or callable that returns a Q Object or Dictionary |
+| `lookups` | list of lookups eg: gte, lte, etc                                                               |
+| `method` | custom filter method, can return queryset or Q object                                           |
+| `negate` | Will perform negation, eg: queryset.exclude()                                                   |
+| `required` | If field is required, and value not passed then will raise validation error                     |
+| `allow_negate` | allow creating negation variant                                                                 |
+
+Note: The priority of `filter_by` is higher than `db_field`, if both mentioned then `filter_by` will take precedence,
+by default the field name is used as `db_field` which will perform the query
+
+```python
+class ProductFilter(FilterSet):
+    # While filtering queryset it will perform queryset.filter(price=<value>)
+    price = IntegerField()  
+```
+
+```python
+class ProductFilter(FilterSet):
+    # While filtering queryset it will perform queryset.filter(price=<value>)
+    price_value = IntegerField(db_field="price")  
+```
+
+
+```python
+class ProductFilter(FilterSet):
+    # While filtering queryset it will perform queryset.filter(price__gte=<value>)
+    price_value = IntegerField(filter_by="price__gte")  
+```
+
+
+
 Fields define what query parameters your FilterSet accepts and how they filter the queryset.
 
 ### Three Ways to Declare Fields
@@ -190,6 +226,7 @@ For text filtering.
 ```python
 from restflow.filters import StringField
 
+
 class ProductFilterSet(FilterSet):
     # Basic string field
     name = StringField()
@@ -205,7 +242,7 @@ class ProductFilterSet(FilterSet):
     )
 
     # Custom lookup expression
-    category_name = StringField(lookup_expr="category__name__icontains")
+    category_name = StringField(filter_by="category__name__icontains")
 ```
 
 **Available lookups:**
@@ -232,7 +269,7 @@ class ProductFilterSet(FilterSet):
 - `trim_whitespace`: Remove leading/trailing whitespace (default: True)
 - `allow_blank`: Allow empty strings
 - `lookups`: List of lookup variations
-- `lookup_expr`: Custom Django ORM lookup expression
+- `filter_by`: Custom Django ORM lookup expression
 - `method`: Custom filter method
 
 ### IntegerField
@@ -241,6 +278,7 @@ For integer number filtering.
 
 ```python
 from restflow.filters import IntegerField
+
 
 class ProductFilterSet(FilterSet):
     # Basic integer field
@@ -258,7 +296,7 @@ class ProductFilterSet(FilterSet):
     )
 
     # Related field
-    category_id = IntegerField(lookup_expr="category__id")
+    category_id = IntegerField(filter_by="category__id")
 ```
 
 **Available lookups:**
@@ -280,7 +318,7 @@ class ProductFilterSet(FilterSet):
 - `validators`: List of custom validators
 - `help_text`: Description
 - `lookups`: List of lookup variations
-- `lookup_expr`: Custom lookup expression
+- `filter_by`: Custom lookup expression
 - `method`: Custom filter method
 
 ### FloatField
@@ -326,7 +364,7 @@ class ProductFilterSet(FilterSet):
 - `validators`: List of validators
 - `help_text`: Description
 - `lookups`: Lookup variations
-- `lookup_expr`: Custom lookup
+- `filter_by`: Custom lookup
 - `method`: Custom method
 
 ### BooleanField
@@ -361,7 +399,7 @@ class ProductFilterSet(FilterSet):
 **Parameters:**
 - `required`: Make field required
 - `help_text`: Description
-- `lookup_expr`: Custom lookup
+- `filter_by`: Custom lookup
 - `method`: Custom method
 
 ### DecimalField
@@ -397,7 +435,7 @@ class ProductFilterSet(FilterSet):
 - `max_digits`: Total digits (including decimal places)
 - `decimal_places`: Number of decimal places
 - `min_value`, `max_value`: Validation
-- `required`, `validators`, `help_text`, `lookups`, `lookup_expr`, `method`
+- `required`, `validators`, `help_text`, `lookups`, `filter_by`, `method`
 
 ### DateField
 
@@ -405,6 +443,7 @@ For date filtering.
 
 ```python
 from restflow.filters import DateField
+
 
 class ProductFilterSet(FilterSet):
     # Basic date
@@ -415,8 +454,8 @@ class ProductFilterSet(FilterSet):
     # Creates: published_date, published_date__gt, __gte, __lt, __lte
 
     # Date range
-    start_date = DateField(lookup_expr="created_at__date__gte")
-    end_date = DateField(lookup_expr="created_at__date__lte")
+    start_date = DateField(filter_by="created_at__date__gte")
+    end_date = DateField(filter_by="created_at__date__lte")
 ```
 
 **Accepts formats:**
@@ -434,7 +473,7 @@ class ProductFilterSet(FilterSet):
 
 **Parameters:**
 - `input_formats`: List of accepted date formats
-- `required`, `validators`, `help_text`, `lookups`, `lookup_expr`, `method`
+- `required`, `validators`, `help_text`, `lookups`, `filter_by`, `method`
 
 ### DateTimeField
 
@@ -468,7 +507,7 @@ class ProductFilterSet(FilterSet):
 **Parameters:**
 - `input_formats`: Accepted datetime formats
 - `default_timezone`: Timezone for naive datetimes
-- `required`, `validators`, `help_text`, `lookups`, `lookup_expr`, `method`
+- `required`, `validators`, `help_text`, `lookups`, `filter_by`, `method`
 
 ### TimeField
 
@@ -494,7 +533,7 @@ class ProductFilterSet(FilterSet):
 - `hour`, `minute`, `second`
 
 **Parameters:**
-- `input_formats`, `required`, `validators`, `help_text`, `lookups`, `lookup_expr`, `method`
+- `input_formats`, `required`, `validators`, `help_text`, `lookups`, `filter_by`, `method`
 
 ### ChoiceField
 
@@ -533,7 +572,7 @@ class ProductFilterSet(FilterSet):
 
 **Parameters:**
 - `choices`: List of (value, label) tuples or list of values
-- `required`, `help_text`, `lookups`, `lookup_expr`, `method`
+- `required`, `help_text`, `lookups`, `filter_by`, `method`
 
 ### MultipleChoiceField
 
@@ -542,6 +581,7 @@ For selecting multiple choices.
 ```python
 from restflow.filters import MultipleChoiceField
 
+
 class ProductFilterSet(FilterSet):
     # Multiple statuses
     statuses = MultipleChoiceField(
@@ -549,7 +589,7 @@ class ProductFilterSet(FilterSet):
             ('draft', 'Draft'),
             ('published', 'Published')
         ],
-        lookup_expr="status__in"
+        filter_by="status__in"
     )
 
     # Multiple categories
@@ -570,7 +610,7 @@ class ProductFilterSet(FilterSet):
 
 **Parameters:**
 - `choices`: List of (value, label) tuples
-- `required`, `help_text`, `lookup_expr`, `method`
+- `required`, `help_text`, `filter_by`, `method`
 
 ### ListField
 
@@ -578,6 +618,7 @@ For filtering by list of values.
 
 ```python
 from restflow.filters import ListField, IntegerField, StringField
+
 
 class ProductFilterSet(FilterSet):
     # List of integers
@@ -587,13 +628,13 @@ class ProductFilterSet(FilterSet):
     # Explicit declaration
     tag_ids = ListField(
         child=IntegerField(),
-        lookup_expr="tags__id__in"
+        filter_by="tags__id__in"
     )
 
     # List of strings
     categories = ListField(
         child=StringField(),
-        lookup_expr="category__name__in"
+        filter_by="category__name__in"
     )
 
     # With validation
@@ -621,7 +662,7 @@ class ProductFilterSet(FilterSet):
 - `child`: Field type for list items
 - `min_length`: Minimum number of items
 - `max_length`: Maximum number of items
-- `required`, `help_text`, `lookups`, `lookup_expr`, `method`
+- `required`, `help_text`, `lookups`, `filter_by`, `method`
 
 ### OrderField
 
@@ -836,13 +877,13 @@ Override the default lookup expression to filter by related fields or custom pat
 ```python
 class ProductFilterSet(FilterSet):
     # Filter by related field
-    category_name = StringField(lookup_expr="category__name")
+    category_name = StringField(filter_by="category__name")
 
     # Case-insensitive related field
-    brand = StringField(lookup_expr="brand__name__iexact")
+    brand = StringField(filter_by="brand__name__iexact")
 
     # Multiple relationship levels
-    department = StringField(lookup_expr="category__department__name")
+    department = StringField(filter_by="category__department__name")
 
 # Usage:
 # ?category_name=Electronics
@@ -854,9 +895,9 @@ class ProductFilterSet(FilterSet):
 
 ```python
 class ProductFilterSet(FilterSet):
-    # Base expression + lookups
+    # Use db_field to point out which field to use while performing filter/exclude
     category_name = StringField(
-        lookup_expr="category__name",
+        db_field="category__name",
         lookups=["icontains", "istartswith"]
     )
 
@@ -891,9 +932,17 @@ class Product(models.Model):
 # FilterSet
 class ProductFilterSet(FilterSet):
     # Traverse multiple relationships
-    region = StringField(lookup_expr="store__address__city__region__name")
-    city = StringField(lookup_expr="store__address__city__name")
+    region = StringField(filter_by="store__address__city__region__name")
+    city = StringField(filter_by="store__address__city__name")
 
+
+# FilterSet Or using db_field
+class ProductFilterSet(FilterSet):
+    # Traverse multiple relationships
+    region = StringField(db_field="store__address__city__region__name")
+    city = StringField(db_field="store__address__city__name")
+
+    
 # Or Can be done using related field
 
 # Usage:
@@ -906,13 +955,34 @@ class ProductFilterSet(FilterSet):
 ```python
 class ProductFilterSet(FilterSet):
     # Filter by date components
-    created_year = IntegerField(lookup_expr="created_at__year")
-    created_month = IntegerField(lookup_expr="created_at__month")
-    created_day = IntegerField(lookup_expr="created_at__day")
+    created_year = IntegerField(filter_by="created_at__year")
+    created_month = IntegerField(filter_by="created_at__month")
+    created_day = IntegerField(filter_by="created_at__day")
 
     # Or with lookups
     published_year = IntegerField(
-        lookup_expr="published_at__year",
+        db_field="published_at__year",
+        lookups=["gte", "lte"]
+    )
+
+# Usage:
+# ?created_year=2024
+# ?created_month=6
+# ?published_year__gte=2020
+```
+
+Or using `db_field`
+
+```python
+class ProductFilterSet(FilterSet):
+    # Filter by date components
+    created_year = IntegerField(db_field="created_at__year")
+    created_month = IntegerField(db_field="created_at__month")
+    created_day = IntegerField(db_field="created_at__day")
+
+    # Or with lookups
+    published_year = IntegerField(
+        db_field="published_at__year",
         lookups=["gte", "lte"]
     )
 
@@ -935,8 +1005,8 @@ def add_annotations(filterset, queryset):
 
 class ProductFilterSet(FilterSet):
     # Filter by annotated fields
-    min_reviews = IntegerField(lookup_expr="review_count__gte")
-    max_reviews = IntegerField(lookup_expr="review_count__lte")
+    min_reviews = IntegerField(filter_by="review_count__gte")
+    max_reviews = IntegerField(filter_by="review_count__lte")
 
     class Meta:
         preprocessors = [add_annotations]
@@ -1145,14 +1215,14 @@ class Product(models.Model):
 # FilterSet
 class ProductFilterSet(FilterSet):
     # Filter by JSON keys
-    brand = StringField(lookup_expr="metadata__brand")
+    brand = StringField(filter_by="metadata__brand")
 
     # Nested JSON keys
-    color = StringField(lookup_expr="metadata__specs__color")
-    size = StringField(lookup_expr="metadata__specs__size")
+    color = StringField(filter_by="metadata__specs__color")
+    size = StringField(filter_by="metadata__specs__size")
 
     # JSON contains
-    has_spec = StringField(lookup_expr="metadata__has_key")
+    has_spec = StringField(filter_by="metadata__has_key")
 
 # Usage:
 # ?brand=Apple
@@ -1220,8 +1290,9 @@ class ProductFilterSet(FilterSet):
 ```python
 Field(
     # Lookup configuration
+    db_field="",                # Corresponding database table field
     lookups=[...],              # List of lookup expressions to generate
-    lookup_expr="...",          # Custom Django ORM lookup expression
+    filter_by="...",          # Custom Django ORM lookup expression
 
     # Validation
     required=False,             # Make field required
@@ -1247,7 +1318,7 @@ StringField(
     allow_blank=False,          # Allow empty strings
 
     # Common parameters
-    lookups, lookup_expr, required, validators, help_text, method
+    db_field, lookups, filter_by, required, validators, help_text, method
 )
 ```
 
@@ -1259,7 +1330,7 @@ IntegerField(
     max_value=None,             # Maximum value
 
     # Common parameters
-    lookups, lookup_expr, required, validators, help_text, method
+    db_field, lookups, filter_by, required, validators, help_text, method
 )
 
 DecimalField(
@@ -1280,7 +1351,7 @@ DateTimeField(
     format=None,                # Output format
 
     # Common parameters
-    lookups, lookup_expr, required, validators, help_text, method
+    db_field, lookups, filter_by, required, validators, help_text, method
 )
 ```
 
@@ -1292,7 +1363,7 @@ ChoiceField(
     allow_blank=False,          # Allow empty selection
 
     # Common parameters
-    lookup_expr, required, help_text, method
+    db_field, filter_by, required, help_text, method
 )
 ```
 
@@ -1306,11 +1377,33 @@ ListField(
     allow_empty=True,           # Allow empty list
 
     # Common parameters
-    lookups, lookup_expr, required, help_text, method
+    db_field, lookups, filter_by, required, help_text, method
 )
 ```
 
 ## Important Caveats
+
+### Lookups with method/filter_by
+Cannot generate lookup variants if `db_field` is unset and `lookups` 
+alongside `method` or `filter_by` is used. Always Set `db_field` 
+
+
+```python
+class ProductFilterSet(FilterSet):
+    # ❌ WRONG - Will raise assertion error as method is used and db_field is unset
+    price = IntegerField(method="custom_method", lookups=["gte", "lte"])
+    # ❌ WRONG - Will raise assertion error as filter_by is used and db_field is unset
+    price = IntegerField(filter_by="price__exact", lookups=["gte", "lte"])
+    # ✅ CORRECT 
+    # This will generate the lookup variants
+    # And if query param contains ?price=1, it will perform queryset.filter(price__exact=1)
+    # And for variants eg:
+    # ?price__gte=1 will perform queryset.filter(price__gte=1)
+    price = IntegerField(filter_by="price__exact", db_field="price", lookups=["gte", "lte"])
+    
+
+```
+
 
 ### Custom Method with Fields
 
@@ -1465,13 +1558,13 @@ class ProductFilterSet(FilterSet):
         help_text="Search in name, description, and tags"
     )
     min_price = IntegerField(
-        lookup_expr="price__gte",
+        filter_by="price__gte",
         min_value=0,
         help_text="Minimum price filter"
     )
 ```
 
-### 8. Use PostgreSQL Features When Available
+### Use PostgreSQL Features When Available
 
 ```python
 # Use full-text search instead of icontains
