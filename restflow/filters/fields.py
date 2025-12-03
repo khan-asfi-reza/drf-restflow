@@ -201,7 +201,6 @@ class Field(drf_fields.Field):
         negate: If True, inverts the filter to exclude matching results.
             Default is False.
 
-        description: Human-readable description of this field's purpose.
 
         required: If True, validation fails when the field is not provided.
             Default is False.
@@ -635,7 +634,6 @@ class ListField(
 
         method: Custom filtering method.
 
-        description: Human-readable description.
 
     Examples:
         Explicit ListField declaration::
@@ -673,7 +671,6 @@ class ListField(
             filter_by: str | None = None,
             lookups: list[str] | None = None,
             method: Callable[[Request, QuerySet, Any], QuerySet] | None = None,
-            description: str | None = None,
             **kwargs,
     ):
         kwargs.pop("child", None)
@@ -683,7 +680,6 @@ class ListField(
             filter_by=filter_by,
             lookups=lookups,
             method=method,
-            description=description,
             **kwargs,
         )
 
