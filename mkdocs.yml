@@ -62,7 +62,7 @@ nav:
   - Tutorial:
       - Filtering: tutorial/filtering.md
   - Guide:
-      - guide/filtering/index.md
+      - guide/index.md
       - Filtering:
           - FilterSet: guide/filtering/filterset.md
           - Fields: guide/filtering/fields.md
