@@ -1,4 +1,5 @@
-from restflow.filters.fields import * # noqa
+from restflow.filters.backends import RestflowFilterBackend
+from restflow.filters.fields import *
 from restflow.filters.filters import *
 
 __all__ = [
@@ -21,6 +22,7 @@ __all__ = [
     "MultipleChoiceField",
     "OrderField",
     "RelatedField",
+    "RestflowFilterBackend",
     "StringField",
     "TimeField"
 ]
