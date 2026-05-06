@@ -2,7 +2,49 @@ import os
 
 import dj_database_url
 import django
+import pytest
 from django.core import management
+
+
+@pytest.fixture(autouse=True, scope="session")
+def _celery_eager_app():
+    """
+    Run celery tasks inline so dispatcher='celery' rules don't need a broker.
+    Skips silently if celery isn't installed.
+    """
+    try:
+        from celery import Celery
+    except ImportError:
+        yield None
+        return
+
+    app = Celery("restflow_tests")
+    app.conf.update(
+        task_always_eager=True,
+        task_eager_propagates=True,
+        broker_url="memory://",
+        result_backend="cache+memory://",
+    )
+    # Importing the bundled task module triggers @shared_task registration.
+    import restflow.caching.tasks  # noqa: F401
+
+    app.autodiscover_tasks(packages=["restflow"], force=True)
+    yield app
+
+
+def pytest_collection_modifyitems(config, items):
+    optional_deps = {
+        "celery": ("celery", "celery not installed"),
+        "redis": ("django_redis", "django-redis not installed"),
+    }
+    for marker_name, (module_name, reason) in optional_deps.items():
+        try:
+            __import__(module_name)
+        except ImportError:
+            skip = pytest.mark.skip(reason=reason)
+            for item in items:
+                if marker_name in item.keywords:
+                    item.add_marker(skip)
 
 
 def pytest_addoption(parser):
@@ -25,6 +67,17 @@ def pytest_configure(config):
             conn_max_age=600
         )
     }
+    if (
+        databases["default"]["ENGINE"] == "django.db.backends.sqlite3"
+        and databases["default"]["NAME"] == ":memory:"
+    ):
+        databases["default"]["NAME"] = (
+            "file:memorydb_default?mode=memory&cache=shared"
+        )
+        databases["default"].setdefault("OPTIONS", {})
+        databases["default"]["TEST"] = {
+            "NAME": "file:memorydb_default?mode=memory&cache=shared",
+        }
 
     settings.configure(
         DEBUG_PROPAGATE_EXCEPTIONS=True,
@@ -39,7 +92,7 @@ def pytest_configure(config):
                 "BACKEND": "django.template.backends.django.DjangoTemplates",
                 "APP_DIRS": True,
                 "OPTIONS": {
-                    "debug": True,  # We want template errors to raise
+                    "debug": True,
                 },
             },
         ],
@@ -58,6 +111,7 @@ def pytest_configure(config):
             "django.contrib.staticfiles",
             "rest_framework",
             "rest_framework.authtoken",
+            "restflow.authentication",
             "tests",
         ),
         PASSWORD_HASHERS=("django.contrib.auth.hashers.MD5PasswordHasher",),
@@ -76,7 +130,6 @@ def pytest_configure(config):
         )
         settings.INSTALLED_APPS += ("guardian",)
 
-    # Manifest storage will raise an exception if static files are not present (ie, a packaging failure).
     if config.getoption("--staticfiles"):
         import restflow
 
@@ -85,7 +138,6 @@ def pytest_configure(config):
         settings.STORAGES["staticfiles"]["BACKEND"] = backend
 
     django.setup()
-    # Create test database tables
     management.call_command("migrate", verbosity=0, interactive=False, run_syncdb=True)
     if config.getoption("--staticfiles"):
         management.call_command("collectstatic", verbosity=0, interactive=False)
