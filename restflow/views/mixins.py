@@ -4,20 +4,132 @@ from rest_framework.response import Response
 from rest_framework.settings import api_settings
 
 
-async def avalidate_or_is_valid_serializer(serializer, raise_exception=False):
-    ais_valid = getattr(serializer, "ais_valid", None)
-    if ais_valid is not None:
-        return await ais_valid(raise_exception=raise_exception)
-    return await sync_to_async(serializer.is_valid, thread_sensitive=True)(
-        raise_exception=raise_exception
-    )
-
-
 async def asave_serializer(serializer):
     asave = getattr(serializer, "asave", None)
     if asave is not None:
         return await asave()
     return await sync_to_async(serializer.save, thread_sensitive=True)()
+
+
+class CreateModelMixin:
+    """
+    Create a model instance, served via the sync pipeline.
+
+    Routes through restflow's validated_serializer (request-side serializer)
+    and serialized_response (response-side serializer) so request/response
+    serializer split, post-fetches, and pagination are all honoured.
+    """
+
+    def create(self, request, *args, **kwargs):
+        """
+        Validates the request body, persists the instance, and returns 201.
+        """
+        serializer = self.validated_serializer()
+        self.perform_create(serializer)
+        return self.serialized_response(
+            serializer.instance,
+            status=status.HTTP_201_CREATED,
+            headers=self.get_success_headers(serializer.data),
+        )
+
+    def perform_create(self, serializer):
+        """
+        Saves the new instance.
+        """
+        serializer.save()
+
+    def get_success_headers(self, data):
+        """
+        Returns the headers that should be set on the 201 response.
+        """
+        try:
+            return {"Location": str(data[api_settings.URL_FIELD_NAME])}
+        except (TypeError, KeyError):
+            return {}
+
+
+class ListModelMixin:
+    """
+    List a queryset, served via the sync pipeline. Routes through
+    paginated_response so pagination, response-side serializer, and
+    post-fetches are honoured.
+    """
+
+    def list(self, request, *args, **kwargs):
+        """
+        Returns a serialized, optionally paginated list of objects.
+        """
+        queryset = self.filter_queryset(self.get_queryset())
+        return self.paginated_response(queryset)
+
+
+class RetrieveModelMixin:
+    """
+    Retrieve a model instance, served via the sync pipeline.
+    """
+
+    def retrieve(self, request, *args, **kwargs):
+        """
+        Returns the serialized representation of a single object.
+        """
+        instance = self.get_object()
+        return self.serialized_response(instance)
+
+
+class UpdateModelMixin:
+    """
+    Update a model instance, served via the sync pipeline.
+    """
+
+    def update(self, request, *args, **kwargs):
+        """
+        Validates the request body, persists the changes, and returns the
+        updated representation.
+        """
+        partial = kwargs.pop("partial", False)
+        instance = self.get_object()
+        serializer = self.validated_serializer(
+            instance=instance, partial=partial
+        )
+        self.perform_update(serializer)
+
+        if getattr(instance, "_prefetched_objects_cache", None):
+            instance._prefetched_objects_cache = {}
+
+        return self.serialized_response(serializer.instance)
+
+    def perform_update(self, serializer):
+        """
+        Saves the updated instance.
+        """
+        serializer.save()
+
+    def partial_update(self, request, *args, **kwargs):
+        """
+        Runs update() with partial=True so PATCH semantics apply.
+        """
+        kwargs["partial"] = True
+        return self.update(request, *args, **kwargs)
+
+
+class DestroyModelMixin:
+    """
+    Destroy a model instance, served via the sync pipeline.
+    """
+
+    def destroy(self, request, *args, **kwargs):
+        """
+        Deletes the resolved instance and returns 204.
+        """
+        instance = self.get_object()
+        self.perform_destroy(instance)
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+    def perform_destroy(self, instance):
+        """
+        Deletes the instance.
+        """
+        instance.delete()
 
 
 class AsyncCreateModelMixin:
@@ -29,12 +141,12 @@ class AsyncCreateModelMixin:
         """
         Validates the request body, persists the instance, and returns 201.
         """
-        serializer = self.get_serializer(data=request.data)
-        await avalidate_or_is_valid_serializer(serializer, raise_exception=True)
+        serializer = await self.avalidated_serializer()
         await self.aperform_create(serializer)
-        headers = self.get_success_headers(serializer.data)
-        return Response(
-            serializer.data, status=status.HTTP_201_CREATED, headers=headers
+        return await self.aserialized_response(
+            serializer.instance,
+            status=status.HTTP_201_CREATED,
+            headers=self.get_success_headers(serializer.data),
         )
 
     async def aperform_create(self, serializer):
@@ -69,12 +181,7 @@ class AsyncListModelMixin:
             queryset = await sync_to_async(
                 self.filter_queryset, thread_sensitive=True
             )(self.get_queryset())
-        page = await self.apaginate_queryset(queryset)
-        if page is not None:
-            serializer = self.get_serializer(page, many=True)
-            return self.get_paginated_response(serializer.data)
-        serializer = self.get_serializer(queryset, many=True)
-        return Response(serializer.data)
+        return await self.apaginated_response(queryset)
 
 
 class AsyncRetrieveModelMixin:
@@ -87,8 +194,7 @@ class AsyncRetrieveModelMixin:
         Returns the serialized representation of a single object.
         """
         instance = await self.aget_object()
-        serializer = self.get_serializer(instance)
-        return Response(serializer.data)
+        return await self.aserialized_response(instance)
 
 
 class AsyncUpdateModelMixin:
@@ -103,16 +209,15 @@ class AsyncUpdateModelMixin:
         """
         partial = kwargs.pop("partial", False)
         instance = await self.aget_object()
-        serializer = self.get_serializer(
-            instance, data=request.data, partial=partial
+        serializer = await self.avalidated_serializer(
+            instance=instance, partial=partial
         )
-        await avalidate_or_is_valid_serializer(serializer, raise_exception=True)
         await self.aperform_update(serializer)
 
         if getattr(instance, "_prefetched_objects_cache", None):
             instance._prefetched_objects_cache = {}
 
-        return Response(serializer.data)
+        return await self.aserialized_response(serializer.instance)
 
     async def aperform_update(self, serializer):
         """
@@ -150,4 +255,3 @@ class AsyncDestroyModelMixin:
             await adelete()
         else:
             await sync_to_async(instance.delete, thread_sensitive=True)()
-

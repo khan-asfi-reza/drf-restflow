@@ -5,6 +5,7 @@ from typing import Any
 import django
 from django.utils.decorators import classonlymethod
 from django.views.decorators.csrf import csrf_exempt
+from rest_framework import generics as drf_generics
 from rest_framework import viewsets as drf_viewsets
 
 from restflow.views.generics import AsyncGenericAPIView
@@ -14,8 +15,13 @@ from restflow.views.mixins import (
     AsyncListModelMixin,
     AsyncRetrieveModelMixin,
     AsyncUpdateModelMixin,
+    CreateModelMixin,
+    DestroyModelMixin,
+    ListModelMixin,
+    RetrieveModelMixin,
+    UpdateModelMixin,
 )
-from restflow.views.views import AsyncAPIView
+from restflow.views.views import APIView, APIViewHelpersMixin, AsyncAPIView
 
 
 @dataclass(frozen=True)
@@ -23,7 +29,7 @@ class ActionConfig:
     """
     Per-action override for a viewset. Each field is optional and falls through
     to the class-level attribute when None. Used as values in action_configs
-    on AsyncViewSet subclasses.
+    on AsyncViewSet and ViewSet subclasses.
 
         class UserViewSet(AsyncModelViewSet):
             serializer_class = UserSer
@@ -59,13 +65,12 @@ class ActionConfig:
     queryset: Any = None
 
 
-class AsyncViewSetMixin(drf_viewsets.ViewSetMixin):
+class ActionConfigResolutionMixin:
     """
-    ViewSetMixin that returns an async closure from as_view().
+    Resolution helpers shared by sync and async viewsets.
 
-    Honours an action_configs mapping so subclasses can override
-    serializer_class, permission_classes, throttle_classes, parser_classes,
-    renderer_classes, pagination_class, and queryset per action.
+    Reads the per-action ActionConfig from action_configs, falling back to
+    the class-level attribute when the config does not override.
     """
 
     action_configs: dict = {}
@@ -196,6 +201,26 @@ class AsyncViewSetMixin(drf_viewsets.ViewSetMixin):
             self._paginator = cls() if cls is not None else None
         return self._paginator
 
+
+class ViewSetMixin(ActionConfigResolutionMixin, drf_viewsets.ViewSetMixin):
+    """
+    Sync ViewSetMixin that honours an action_configs mapping.
+
+    Mirrors AsyncViewSetMixin's resolution semantics on top of DRF's
+    sync ViewSetMixin. Use ViewSet, GenericViewSet, ReadOnlyModelViewSet,
+    or ModelViewSet for the concrete sync surface.
+    """
+
+
+class AsyncViewSetMixin(ActionConfigResolutionMixin, drf_viewsets.ViewSetMixin):
+    """
+    ViewSetMixin that returns an async closure from as_view().
+
+    Honours an action_configs mapping so subclasses can override
+    serializer_class, permission_classes, throttle_classes, parser_classes,
+    renderer_classes, pagination_class, and queryset per action.
+    """
+
     @classonlymethod
     def as_view(cls, actions=None, **initkwargs):  # noqa: N805
         """
@@ -257,6 +282,55 @@ class AsyncViewSetMixin(drf_viewsets.ViewSetMixin):
             view.login_required = False
 
         return csrf_exempt(view)
+
+
+class ViewSet(ViewSetMixin, APIView):
+    """
+    The base sync ViewSet class. Does not provide any actions by default.
+
+    Adds restflow's action_configs resolution and the sync APIView surface
+    (serialized_response, paginated_response, validated_serializer).
+    """
+
+
+class GenericViewSet(
+    ViewSetMixin, APIViewHelpersMixin, drf_generics.GenericAPIView
+):
+    """
+    The sync GenericViewSet class. Does not provide any actions by default,
+    but includes DRF's GenericAPIView base behaviour (get_object,
+    filter_queryset, paginate_queryset) plus restflow's action_configs
+    resolution and the validated_serializer / serialized_response /
+    paginated_response helper surface.
+    """
+
+
+class ReadOnlyModelViewSet(
+    RetrieveModelMixin,
+    ListModelMixin,
+    GenericViewSet,
+):
+    """
+    Sync viewset that provides default list() and retrieve() actions, served
+    through restflow's serialized_response and paginated_response helpers so
+    the request/response serializer split and post-fetches apply.
+    """
+
+
+class ModelViewSet(
+    CreateModelMixin,
+    RetrieveModelMixin,
+    UpdateModelMixin,
+    DestroyModelMixin,
+    ListModelMixin,
+    GenericViewSet,
+):
+    """
+    Sync viewset that provides default create(), retrieve(), update(),
+    partial_update(), destroy(), and list() actions, all routed through
+    restflow's helper surface (validated_serializer, serialized_response,
+    paginated_response).
+    """
 
 
 class AsyncViewSet(AsyncViewSetMixin, AsyncAPIView):

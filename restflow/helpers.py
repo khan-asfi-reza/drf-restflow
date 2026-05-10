@@ -14,6 +14,8 @@ from asgiref.sync import async_to_sync
 
 Email = NewType("Email", str)
 IPAddress = NewType("IPAddress", str)
+BlankableString = NewType("BlankableString", str)
+
 
 RESERVED_SERIALIZER_ATTRS = frozenset(
     {

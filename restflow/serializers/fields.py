@@ -7,7 +7,12 @@ from typing import Any
 from rest_framework import fields as drf_fields
 from rest_framework.serializers import BaseSerializer
 
-from restflow.helpers import Email, IPAddress, resolve_field_from_type
+from restflow.helpers import (
+    BlankableString,
+    Email,
+    IPAddress,
+    resolve_field_from_type,
+)
 
 SERIALIZER_TYPE_ASSERTION_ERROR = "annotation must be a supported type"
 
@@ -26,6 +31,9 @@ class DecimalField(drf_fields.DecimalField):
     def __init__(self, *, max_digits: int = 20, decimal_places: int = 6, **kwargs):
         super().__init__(max_digits=max_digits, decimal_places=decimal_places, **kwargs)
 
+class BlankableCharField(drf_fields.CharField):
+    def __init__(self, **kwargs):
+        super().__init__(allow_blank=True, **kwargs)
 
 class Field:
     """Sentinel field that carries DRF kwargs to an annotated field while letting the annotation pick the final field class.
@@ -66,6 +74,7 @@ SerializerFieldMap: dict[type, type[drf_fields.Field]] = {
     IPAddress: drf_fields.IPAddressField,
     dict: drf_fields.DictField,
     Any: drf_fields.JSONField,
+    BlankableString: BlankableCharField,
 }
 
 

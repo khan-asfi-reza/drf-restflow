@@ -75,15 +75,15 @@ class APIViewHelpersMixin:
         return self.pagination_class
 
     def get_serializer(
-        self, *args, serializer_class=None, _direction=None, **kwargs
+        self, *args, serializer_class=None, direction=None, **kwargs
     ):
         """
         Returns the serializer instance that should be used for the action.
         """
         if serializer_class is None:
-            if _direction == "request":
+            if direction == "request":
                 serializer_class = self.get_request_serializer_class()
-            elif _direction == "response":
+            elif direction == "response":
                 serializer_class = self.get_response_serializer_class()
             else:
                 serializer_class = self.get_serializer_class()
@@ -107,7 +107,7 @@ class APIViewHelpersMixin:
         ser = self.get_serializer(
             data=data,
             serializer_class=serializer_class,
-            _direction="request",
+            direction="request",
             **kwargs,
         )
         ser.is_valid(raise_exception=True)
@@ -121,6 +121,7 @@ class APIViewHelpersMixin:
         status=status.HTTP_200_OK,
         serializer_class=None,
         post_fetches=None,
+        headers=None,
     ):
         """
         Returns a Response containing the serialized instance.
@@ -130,9 +131,9 @@ class APIViewHelpersMixin:
             instance,
             many=many,
             serializer_class=serializer_class,
-            _direction="response",
+            direction="response",
         )
-        return Response(ser.data, status=status)
+        return Response(ser.data, status=status, headers=headers)
 
     def paginated_response(
         self,
@@ -141,6 +142,7 @@ class APIViewHelpersMixin:
         serializer_class=None,
         pagination_class=None,
         post_fetches=None,
+        headers=None,
     ):
         """
         Returns a paginated Response for the given queryset.
@@ -151,9 +153,9 @@ class APIViewHelpersMixin:
                 queryset,
                 many=True,
                 serializer_class=serializer_class,
-                _direction="response",
+                direction="response",
             )
-            return Response(ser.data)
+            return Response(ser.data, headers=headers)
         paginator = paginator_cls()
         page = paginator.paginate_queryset(queryset, self.request, view=self)
         if page is None:
@@ -161,17 +163,21 @@ class APIViewHelpersMixin:
                 queryset,
                 many=True,
                 serializer_class=serializer_class,
-                _direction="response",
+                direction="response",
             )
-            return Response(ser.data)
+            return Response(ser.data, headers=headers)
         page = perform_post_fetches(page, post_fetches, many=True)
         ser = self.get_serializer(
             page,
             many=True,
             serializer_class=serializer_class,
-            _direction="response",
+            direction="response",
         )
-        return paginator.get_paginated_response(ser.data)
+        response = paginator.get_paginated_response(ser.data)
+        if headers:
+            for key, value in headers.items():
+                response[key] = value
+        return response
 
 
 
@@ -360,7 +366,7 @@ class AsyncAPIView(APIViewHelpersMixin, DRFAPIView):
         ser = self.get_serializer(
             data=data,
             serializer_class=serializer_class,
-            _direction="request",
+            direction="request",
             **kwargs,
         )
         ais_valid = getattr(ser, "ais_valid", None)
@@ -380,6 +386,7 @@ class AsyncAPIView(APIViewHelpersMixin, DRFAPIView):
         status=status.HTTP_200_OK,
         serializer_class=None,
         post_fetches=None,
+        headers=None,
     ):
         """
         Returns a Response containing the serialized instance, awaiting any
@@ -390,9 +397,9 @@ class AsyncAPIView(APIViewHelpersMixin, DRFAPIView):
             instance,
             many=many,
             serializer_class=serializer_class,
-            _direction="response",
+            direction="response",
         )
-        return Response(ser.data, status=status)
+        return Response(ser.data, status=status, headers=headers)
 
     async def apaginated_response(
         self,
@@ -401,6 +408,7 @@ class AsyncAPIView(APIViewHelpersMixin, DRFAPIView):
         serializer_class=None,
         pagination_class=None,
         post_fetches=None,
+        headers=None,
     ):
         """
         Returns a paginated Response for the given queryset, using async
@@ -412,9 +420,9 @@ class AsyncAPIView(APIViewHelpersMixin, DRFAPIView):
                 queryset,
                 many=True,
                 serializer_class=serializer_class,
-                _direction="response",
+                direction="response",
             )
-            return Response(ser.data)
+            return Response(ser.data, headers=headers)
         paginator = paginator_cls()
         apaginate = getattr(paginator, "apaginate_queryset", None)
         if apaginate is not None:
@@ -428,14 +436,18 @@ class AsyncAPIView(APIViewHelpersMixin, DRFAPIView):
                 queryset,
                 many=True,
                 serializer_class=serializer_class,
-                _direction="response",
+                direction="response",
             )
-            return Response(ser.data)
+            return Response(ser.data, headers=headers)
         page = await aperform_post_fetches(page, post_fetches, many=True)
         ser = self.get_serializer(
             page,
             many=True,
             serializer_class=serializer_class,
-            _direction="response",
+            direction="response",
         )
-        return paginator.get_paginated_response(ser.data)
+        response = paginator.get_paginated_response(ser.data)
+        if headers:
+            for key, value in headers.items():
+                response[key] = value
+        return response
