@@ -190,7 +190,7 @@ def test_basic_aauthenticate_credentials_returns_user(monkeypatch):
         fake_django_auth,
     )
 
-    encoded = base64.b64encode(b"alice:secret").decode("ascii")
+    encoded = base64.b64encode(b"khan:secret").decode("ascii")
     auth = BasicAuthentication()
     request = _make_request({"HTTP_AUTHORIZATION": f"Basic {encoded}"})
     result = _run(auth.aauthenticate(request))
@@ -206,7 +206,7 @@ def test_basic_aauthenticate_credentials_invalid_raises(monkeypatch):
         fake_django_auth,
     )
 
-    encoded = base64.b64encode(b"alice:wrong").decode("ascii")
+    encoded = base64.b64encode(b"khan:wrong").decode("ascii")
     auth = BasicAuthentication()
     request = _make_request({"HTTP_AUTHORIZATION": f"Basic {encoded}"})
     with pytest.raises(AuthenticationFailed, match="Invalid username/password"):
@@ -224,7 +224,7 @@ def test_basic_aauthenticate_credentials_inactive_raises(monkeypatch):
         fake_django_auth,
     )
 
-    encoded = base64.b64encode(b"alice:secret").decode("ascii")
+    encoded = base64.b64encode(b"khan:secret").decode("ascii")
     auth = BasicAuthentication()
     request = _make_request({"HTTP_AUTHORIZATION": f"Basic {encoded}"})
     with pytest.raises(AuthenticationFailed, match="inactive"):
@@ -270,7 +270,7 @@ def test_remote_user_aauthenticate_returns_user(monkeypatch):
     )
 
     auth = RemoteUserAuthentication()
-    request = _make_request({"REMOTE_USER": "alice"})
+    request = _make_request({"REMOTE_USER": "khan"})
     result = _run(auth.aauthenticate(request))
     assert result == (user, None)
 
@@ -287,7 +287,7 @@ def test_remote_user_aauthenticate_returns_none_when_inactive(monkeypatch):
     )
 
     auth = RemoteUserAuthentication()
-    request = _make_request({"REMOTE_USER": "alice"})
+    request = _make_request({"REMOTE_USER": "khan"})
     assert _run(auth.aauthenticate(request)) is None
 
 

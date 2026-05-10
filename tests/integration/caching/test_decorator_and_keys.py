@@ -17,12 +17,12 @@ from restflow.caching import (
 )
 
 
-def _run(coro):
+def run_coro(coro):
     return asyncio.run(coro)
 
 
 @pytest.fixture(autouse=True)
-def _clear_cache():
+def clear_cache():
     cache.clear()
     yield
     cache.clear()
@@ -55,8 +55,8 @@ def test_cache_result_decorator_caches_async_result():
         calls["n"] += 1
         return a + b
 
-    assert _run(addr(2, 3)) == 5
-    assert _run(addr(2, 3)) == 5
+    assert run_coro(addr(2, 3)) == 5
+    assert run_coro(addr(2, 3)) == 5
     assert calls["n"] == 1
 
 
@@ -309,7 +309,7 @@ def test_cache_result_cache_if_with_async_predicate_runs():
     async def f():
         return 99
 
-    assert _run(f()) == 99
+    assert run_coro(f()) == 99
 
 
 def test_cache_result_decorated_method_attribute_set():

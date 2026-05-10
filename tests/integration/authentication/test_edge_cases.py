@@ -33,18 +33,18 @@ from restflow.authentication.jwt import (
 )
 
 
-def _run(coro):
+def run_coro(coro):
     return asyncio.run(coro)
 
 
-def _make_user(pk=42, active=True):
+def make_user(pk=42, active=True):
     user = MagicMock()
     user.id = pk
     user.is_active = active
     return user
 
 
-def _request(token=None, scheme="Bearer"):
+def make_request(token=None, scheme="Bearer"):
     factory = RequestFactory()
     extra = {}
     if token is not None:
@@ -53,7 +53,7 @@ def _request(token=None, scheme="Bearer"):
 
 
 @pytest.fixture(autouse=True)
-def _jwt_settings():
+def jwt_settings():
     with override_settings(
         RESTFLOW_SETTINGS={
             "JWT": {
@@ -126,29 +126,29 @@ def test_get_jwt_settings_returns_namespace():
 
 
 def test_jwt_returns_none_when_authorization_header_uses_basic():
-    request = _request(token="anything", scheme="Basic")
+    request = make_request(token="anything", scheme="Basic")
     auth = JWTAuthentication()
-    assert _run(auth.aauthenticate(request)) is None
+    assert run_coro(auth.aauthenticate(request)) is None
 
 
 def test_jwt_returns_none_for_empty_header():
     factory = RequestFactory()
     request = Request(factory.get("/"))
-    assert _run(JWTAuthentication().aauthenticate(request)) is None
+    assert run_coro(JWTAuthentication().aauthenticate(request)) is None
 
 
 def test_jwt_rejects_only_bearer_no_token():
     factory = RequestFactory()
     request = Request(factory.get("/", HTTP_AUTHORIZATION="Bearer"))
     with pytest.raises(AuthenticationFailed, match="Bearer"):
-        _run(JWTAuthentication().aauthenticate(request))
+        run_coro(JWTAuthentication().aauthenticate(request))
 
 
 def test_jwt_rejects_token_with_trailing_space_only():
     factory = RequestFactory()
     request = Request(factory.get("/", HTTP_AUTHORIZATION="Bearer "))
     with pytest.raises(AuthenticationFailed, match="Bearer"):
-        _run(JWTAuthentication().aauthenticate(request))
+        run_coro(JWTAuthentication().aauthenticate(request))
 
 
 def test_jwt_decode_rejects_payload_missing_exp():
@@ -166,7 +166,7 @@ def test_jwt_decode_rejects_payload_missing_iat():
 
 
 def test_refresh_rotate_returns_new_jti():
-    user = _make_user()
+    user = make_user()
     refresh = RefreshToken.for_user(user)
     rotated = refresh.rotate()
     assert rotated.jti != refresh.jti
@@ -174,14 +174,14 @@ def test_refresh_rotate_returns_new_jti():
 
 
 def test_refresh_minted_access_carries_user_claim():
-    user = _make_user(pk=77)
+    user = make_user(pk=77)
     refresh = RefreshToken.for_user(user)
     access = refresh.access_token
     assert access.payload["user_id"] == 77
 
 
 def test_token_str_returns_raw():
-    token = AccessToken.for_user(_make_user())
+    token = AccessToken.for_user(make_user())
     assert str(token) == token.raw
 
 
@@ -209,27 +209,27 @@ def test_jwt_authentication_does_not_match_lowercase_bearer():
     token = AccessToken.for_user(user)
     factory = RequestFactory()
     request = Request(factory.get("/", HTTP_AUTHORIZATION=f"bearer {token}"))
-    result = _run(JWTAuthentication().aauthenticate(request))
+    result = run_coro(JWTAuthentication().aauthenticate(request))
     assert result is not None
 
 
 def test_basic_authentication_returns_none_for_non_basic_header():
     factory = RequestFactory()
     request = Request(factory.get("/", HTTP_AUTHORIZATION="Bearer abc"))
-    assert _run(BasicAuthentication().aauthenticate(request)) is None
+    assert run_coro(BasicAuthentication().aauthenticate(request)) is None
 
 
 def test_basic_authentication_returns_none_when_header_missing():
     factory = RequestFactory()
     request = Request(factory.get("/"))
-    assert _run(BasicAuthentication().aauthenticate(request)) is None
+    assert run_coro(BasicAuthentication().aauthenticate(request)) is None
 
 
 def test_basic_authentication_rejects_no_credentials():
     factory = RequestFactory()
     request = Request(factory.get("/", HTTP_AUTHORIZATION="Basic"))
     with pytest.raises(AuthenticationFailed, match="No credentials"):
-        _run(BasicAuthentication().aauthenticate(request))
+        run_coro(BasicAuthentication().aauthenticate(request))
 
 
 def test_basic_authentication_rejects_three_part_credentials():
@@ -238,7 +238,7 @@ def test_basic_authentication_rejects_three_part_credentials():
         factory.get("/", HTTP_AUTHORIZATION="Basic part1 part2")
     )
     with pytest.raises(AuthenticationFailed, match="should not contain spaces"):
-        _run(BasicAuthentication().aauthenticate(request))
+        run_coro(BasicAuthentication().aauthenticate(request))
 
 
 def test_basic_authentication_rejects_invalid_base64():
@@ -247,7 +247,7 @@ def test_basic_authentication_rejects_invalid_base64():
         factory.get("/", HTTP_AUTHORIZATION="Basic !!!notbase64!!!")
     )
     with pytest.raises(AuthenticationFailed):
-        _run(BasicAuthentication().aauthenticate(request))
+        run_coro(BasicAuthentication().aauthenticate(request))
 
 
 @pytest.mark.django_db(transaction=True)
@@ -259,7 +259,7 @@ def test_basic_authentication_round_trip_valid_credentials():
     request = Request(
         factory.get("/", HTTP_AUTHORIZATION=f"Basic {creds}")
     )
-    result = _run(BasicAuthentication().aauthenticate(request))
+    result = run_coro(BasicAuthentication().aauthenticate(request))
     assert result is not None
     assert result[0].username == "basic"
 
@@ -274,7 +274,7 @@ def test_basic_authentication_rejects_inactive_user():
         factory.get("/", HTTP_AUTHORIZATION=f"Basic {creds}")
     )
     with pytest.raises(AuthenticationFailed):
-        _run(BasicAuthentication().aauthenticate(request))
+        run_coro(BasicAuthentication().aauthenticate(request))
 
 
 @pytest.mark.django_db(transaction=True)
@@ -287,20 +287,20 @@ def test_basic_authentication_rejects_wrong_password():
         factory.get("/", HTTP_AUTHORIZATION=f"Basic {creds}")
     )
     with pytest.raises(AuthenticationFailed):
-        _run(BasicAuthentication().aauthenticate(request))
+        run_coro(BasicAuthentication().aauthenticate(request))
 
 
 def test_token_authentication_returns_none_on_non_token_header():
     factory = RequestFactory()
     request = Request(factory.get("/", HTTP_AUTHORIZATION="Basic abc"))
-    assert _run(TokenAuthentication().aauthenticate(request)) is None
+    assert run_coro(TokenAuthentication().aauthenticate(request)) is None
 
 
 def test_token_authentication_rejects_only_keyword():
     factory = RequestFactory()
     request = Request(factory.get("/", HTTP_AUTHORIZATION="Token"))
     with pytest.raises(AuthenticationFailed, match="No credentials"):
-        _run(TokenAuthentication().aauthenticate(request))
+        run_coro(TokenAuthentication().aauthenticate(request))
 
 
 def test_token_authentication_rejects_three_part_token():
@@ -309,7 +309,7 @@ def test_token_authentication_rejects_three_part_token():
         factory.get("/", HTTP_AUTHORIZATION="Token a b")
     )
     with pytest.raises(AuthenticationFailed, match="should not contain spaces"):
-        _run(TokenAuthentication().aauthenticate(request))
+        run_coro(TokenAuthentication().aauthenticate(request))
 
 
 @pytest.mark.django_db(transaction=True)
@@ -317,7 +317,7 @@ def test_token_authentication_rejects_unknown_token():
     factory = RequestFactory()
     request = Request(factory.get("/", HTTP_AUTHORIZATION="Token nope"))
     with pytest.raises(AuthenticationFailed, match="Invalid token"):
-        _run(TokenAuthentication().aauthenticate(request))
+        run_coro(TokenAuthentication().aauthenticate(request))
 
 
 @pytest.mark.django_db(transaction=True)
@@ -331,7 +331,7 @@ def test_token_authentication_round_trip():
     request = Request(
         factory.get("/", HTTP_AUTHORIZATION=f"Token {tok.key}")
     )
-    result = _run(TokenAuthentication().aauthenticate(request))
+    result = run_coro(TokenAuthentication().aauthenticate(request))
     assert result is not None
     assert result[0].pk == user.pk
 
@@ -348,14 +348,14 @@ def test_token_authentication_rejects_inactive_user():
         factory.get("/", HTTP_AUTHORIZATION=f"Token {tok.key}")
     )
     with pytest.raises(AuthenticationFailed):
-        _run(TokenAuthentication().aauthenticate(request))
+        run_coro(TokenAuthentication().aauthenticate(request))
 
 
 def test_session_authentication_returns_none_for_anonymous():
     factory = RequestFactory()
     request = Request(factory.get("/"))
     request.user = None
-    assert _run(SessionAuthentication().aauthenticate(request)) is None
+    assert run_coro(SessionAuthentication().aauthenticate(request)) is None
 
 
 def test_session_authentication_returns_none_for_inactive():
@@ -365,18 +365,18 @@ def test_session_authentication_returns_none_for_inactive():
     user.is_active = False
     raw.user = user
     request = Request(raw)
-    assert _run(SessionAuthentication().aauthenticate(request)) is None
+    assert run_coro(SessionAuthentication().aauthenticate(request)) is None
 
 
 def test_atoken_blacklist_is_blacklisted_uses_configured_backend():
-    user = _make_user()
+    user = make_user()
     refresh = RefreshToken.for_user(user)
-    _run(refresh.ablacklist())
-    assert _run(ATokenBlacklist.is_blacklisted(refresh.jti)) is True
+    run_coro(refresh.ablacklist())
+    assert run_coro(ATokenBlacklist.is_blacklisted(refresh.jti)) is True
 
 
 def test_jwt_with_custom_auth_header_type():
-    user = _make_user()
+    user = make_user()
     factory = RequestFactory()
     with override_settings(
         RESTFLOW_SETTINGS={
@@ -389,11 +389,11 @@ def test_jwt_with_custom_auth_header_type():
         }
     ):
         request = Request(factory.get("/", HTTP_AUTHORIZATION="Bearer x"))
-        assert _run(JWTAuthentication().aauthenticate(request)) is None
+        assert run_coro(JWTAuthentication().aauthenticate(request)) is None
 
 
 def test_jwt_decode_invalid_audience():
-    user = _make_user()
+    user = make_user()
     with override_settings(
         RESTFLOW_SETTINGS={
             "JWT": {
@@ -442,7 +442,7 @@ def test_jwt_decode_with_leeway_passes_just_expired_token():
 
 
 def test_atoken_blacklist_is_blacklisted_returns_false_for_unknown_jti():
-    assert _run(ATokenBlacklist.is_blacklisted("never-seen")) is False
+    assert run_coro(ATokenBlacklist.is_blacklisted("never-seen")) is False
 
 
 @pytest.mark.django_db(transaction=True)
@@ -450,7 +450,7 @@ def test_jwt_blacklist_disabled_skips_check():
     User = get_user_model()
     user = User.objects.create_user(username="bl-disabled", password="x", is_active=True)
     token = AccessToken.for_user(user)
-    _run(ATokenBlacklist.add(token.jti, expires_at=token.exp))
+    run_coro(ATokenBlacklist.add(token.jti, expires_at=token.exp))
     factory = RequestFactory()
     with override_settings(
         RESTFLOW_SETTINGS={
@@ -464,6 +464,6 @@ def test_jwt_blacklist_disabled_skips_check():
         }
     ):
         request = Request(factory.get("/", HTTP_AUTHORIZATION=f"Bearer {token}"))
-        result = _run(JWTAuthentication().aauthenticate(request))
+        result = run_coro(JWTAuthentication().aauthenticate(request))
         assert result is not None
         assert result[0].pk == user.pk

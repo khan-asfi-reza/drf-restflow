@@ -99,9 +99,9 @@ def urls():
 
 def test_factory_post_encodes_json_by_default():
     factory = AsyncAPIRequestFactory()
-    raw = factory.post("/echo/", data={"name": "alice"})
+    raw = factory.post("/echo/", data={"name": "khan"})
     assert raw.headers["content-type"].startswith("application/json")
-    assert json.loads(raw.body) == {"name": "alice"}
+    assert json.loads(raw.body) == {"name": "khan"}
 
 
 def test_factory_get_builds_asgi_request():
@@ -145,12 +145,12 @@ def test_client_force_authenticate_passes_permission_check(urls):
         is_active = True
 
         def __str__(self):
-            return "alice"
+            return "khan"
 
     client.force_authenticate(user=_U())
     response = _run(client.get("/private/"))
     assert response.status_code == 200
-    assert response.json() == {"user": "alice"}
+    assert response.json() == {"user": "khan"}
 
 
 def test_client_force_authenticate_clear(urls):
@@ -161,7 +161,7 @@ def test_client_force_authenticate_clear(urls):
         is_active = True
 
         def __str__(self):
-            return "alice"
+            return "khan"
 
     client.force_authenticate(user=_U())
     response = _run(client.get("/private/"))
@@ -226,7 +226,7 @@ def test_factory_post_with_no_data_uses_empty_body():
 
 def test_factory_post_multipart_renders_with_charset():
     factory = AsyncAPIRequestFactory()
-    raw = factory.post("/echo/", data={"name": "alice"}, format="multipart")
+    raw = factory.post("/echo/", data={"name": "khan"}, format="multipart")
     ct = raw.headers["content-type"]
     assert ct.startswith("multipart/form-data")
     assert "charset=utf-8" in ct
@@ -255,16 +255,16 @@ def test_encode_data_encodes_string_renderer_output(monkeypatch):
 
 def test_factory_put_encodes_json_by_default():
     factory = AsyncAPIRequestFactory()
-    raw = factory.put("/methods/", data={"name": "alice"})
+    raw = factory.put("/methods/", data={"name": "khan"})
     assert raw.method == "PUT"
-    assert json.loads(raw.body) == {"name": "alice"}
+    assert json.loads(raw.body) == {"name": "khan"}
 
 
 def test_factory_patch_encodes_json_by_default():
     factory = AsyncAPIRequestFactory()
-    raw = factory.patch("/methods/", data={"name": "alice"})
+    raw = factory.patch("/methods/", data={"name": "khan"})
     assert raw.method == "PATCH"
-    assert json.loads(raw.body) == {"name": "alice"}
+    assert json.loads(raw.body) == {"name": "khan"}
 
 
 def test_factory_delete_encodes_json_by_default():
@@ -288,7 +288,7 @@ def test_client_logout_clears_credentials_and_force_auth(urls):
         is_active = True
 
         def __str__(self):
-            return "alice"
+            return "khan"
 
     client.force_authenticate(user=_U())
     client.credentials(HTTP_X_API_TOKEN="secret-token")
@@ -311,18 +311,18 @@ def test_client_credentials_rejects_non_http_or_content_keys():
 
 def test_client_put_json_default(urls):
     client = AsyncAPIClient()
-    response = _run(client.put("/methods/", data={"name": "alice"}))
+    response = _run(client.put("/methods/", data={"name": "khan"}))
     assert response.status_code == 200
     assert response.json()["method"] == "PUT"
-    assert json.loads(response.json()["body"]) == {"name": "alice"}
+    assert json.loads(response.json()["body"]) == {"name": "khan"}
 
 
 def test_client_patch_json_default(urls):
     client = AsyncAPIClient()
-    response = _run(client.patch("/methods/", data={"name": "alice"}))
+    response = _run(client.patch("/methods/", data={"name": "khan"}))
     assert response.status_code == 200
     assert response.json()["method"] == "PATCH"
-    assert json.loads(response.json()["body"]) == {"name": "alice"}
+    assert json.loads(response.json()["body"]) == {"name": "khan"}
 
 
 def test_client_delete_json_default(urls):

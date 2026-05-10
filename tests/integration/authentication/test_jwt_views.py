@@ -59,7 +59,7 @@ def test_obtain_view_returns_access_and_refresh_for_valid_credentials(monkeypatc
     )
     response = _post(
         TokenObtainView.as_view(),
-        {"username": "alice", "password": "pw"},
+        {"username": "khan", "password": "pw"},
     )
     assert response.status_code == 200
     assert "access" in response.data

@@ -22,7 +22,7 @@ from restflow.serializers.fields import DecimalField as RFDecimal
 from tests.models import Article, SampleModel, Tag
 
 
-def _run(coro):
+def run_coro(coro):
     return asyncio.run(coro)
 
 
@@ -291,7 +291,7 @@ def test_async_validate_field_changes_value_then_top_validate_uses_new_value():
             seen["a"] = attrs["a"]
             return attrs
 
-    _run(S(data={"a": 5}).ais_valid())
+    run_coro(S(data={"a": 5}).ais_valid())
     assert seen["a"] == 6
 
 
@@ -322,7 +322,7 @@ def test_async_validate_method_can_skip_field():
             raise SkipField()
 
     s = S(data={"keep": "k", "drop": "d"})
-    assert _run(s.ais_valid())
+    assert run_coro(s.ais_valid())
     assert "drop" not in s.validated_data
 
 
@@ -345,7 +345,7 @@ def test_async_validation_collects_multi_field_errors():
             raise ValidationError("fail-a")
 
     s = S(data={"a": 1})
-    assert not _run(s.ais_valid())
+    assert not run_coro(s.ais_valid())
     assert "a" in s.errors
 
 
@@ -393,7 +393,7 @@ def test_async_to_representation_default_falls_back_to_sync_to_representation():
         a: int
 
     instance = type("I", (), {"a": 9})()
-    rep = _run(S(instance).ato_representation(instance))
+    rep = run_coro(S(instance).ato_representation(instance))
     assert rep == {"a": 9}
 
 
@@ -480,7 +480,7 @@ class TestModelSerializerPermutations:
             instance = await s.asave()
             assert instance.integer_field == 11
 
-        _run(run())
+        run_coro(run())
 
     def test_validation_error_on_invalid_choice(self):
         class S(ModelSerializer):
@@ -589,7 +589,7 @@ def test_async_validate_returns_none_triggers_assertion():
             return None
 
     with pytest.raises(AssertionError):
-        _run(S(data={"a": 1}).ais_valid(raise_exception=True))
+        run_coro(S(data={"a": 1}).ais_valid(raise_exception=True))
 
 
 def test_save_with_kwargs_merged_into_validated_data():
@@ -619,7 +619,7 @@ def test_asave_with_kwargs_merged_into_validated_data():
         instance = await s.asave(extra="stamp")
         assert instance.extra == "stamp"
 
-    _run(run())
+    run_coro(run())
 
 
 def test_save_rejects_commit_kwarg():
@@ -648,7 +648,7 @@ def test_asave_rejects_commit_kwarg():
         with pytest.raises(AssertionError):
             await s.asave(commit=False)
 
-    _run(run())
+    run_coro(run())
 
 
 def test_save_after_data_access_raises():
@@ -678,8 +678,8 @@ def test_field_with_source_translates_input_to_output_path():
     class S(Serializer):
         display_name: str = Field(source="name")
 
-    instance = type("I", (), {"name": "alice"})()
-    assert S(instance).data == {"display_name": "alice"}
+    instance = type("I", (), {"name": "khan"})()
+    assert S(instance).data == {"display_name": "khan"}
 
 
 def test_optional_nested_serializer_in_list():

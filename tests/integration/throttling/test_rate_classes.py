@@ -14,12 +14,12 @@ from restflow.throttling import (
 )
 
 
-def _run(coro):
+def run_coro(coro):
     return asyncio.run(coro)
 
 
 @pytest.fixture(autouse=True)
-def _clear_cache():
+def clear_cache():
     default_cache.clear()
     yield
     default_cache.clear()
@@ -34,16 +34,16 @@ def _clear_cache():
     }
 )
 def test_anon_rate_throttle_with_anonymous_request():
-    class _T(AnonRateThrottle):
+    class TestThrottle(AnonRateThrottle):
         rate = "2/min"
 
-    throttle = _T()
+    throttle = TestThrottle()
     request = MagicMock()
     request.user.is_authenticated = False
     request.META = {"REMOTE_ADDR": "1.2.3.4"}
-    assert _run(throttle.aallow_request(request, None)) is True
-    assert _run(throttle.aallow_request(request, None)) is True
-    assert _run(throttle.aallow_request(request, None)) is False
+    assert run_coro(throttle.aallow_request(request, None)) is True
+    assert run_coro(throttle.aallow_request(request, None)) is True
+    assert run_coro(throttle.aallow_request(request, None)) is False
 
 
 @override_settings(
@@ -55,10 +55,10 @@ def test_anon_rate_throttle_with_anonymous_request():
     }
 )
 def test_user_rate_throttle_segregates_users():
-    class _T(UserRateThrottle):
+    class TestThrottle(UserRateThrottle):
         rate = "1/min"
 
-    throttle = _T()
+    throttle = TestThrottle()
     user_a = MagicMock()
     user_a.is_authenticated = True
     user_a.pk = 1
@@ -75,9 +75,9 @@ def test_user_rate_throttle_segregates_users():
     req_b.user = user_b
     req_b.META = {"REMOTE_ADDR": "1.1.1.1"}
 
-    assert _run(throttle.aallow_request(req_a, None)) is True
-    assert _run(throttle.aallow_request(req_b, None)) is True
-    assert _run(throttle.aallow_request(req_a, None)) is False
+    assert run_coro(throttle.aallow_request(req_a, None)) is True
+    assert run_coro(throttle.aallow_request(req_b, None)) is True
+    assert run_coro(throttle.aallow_request(req_a, None)) is False
 
 
 @override_settings(
@@ -89,10 +89,10 @@ def test_user_rate_throttle_segregates_users():
     }
 )
 def test_scoped_rate_throttle_sync_path():
-    class _S(ScopedRateThrottle):
+    class CustomS(ScopedRateThrottle):
         THROTTLE_RATES = {"specific-scope": "1/min"}
 
-    throttle = _S()
+    throttle = CustomS()
     request = MagicMock()
     request.user.is_authenticated = True
     request.user.pk = 1
@@ -106,18 +106,18 @@ def test_scoped_rate_throttle_sync_path():
 
 
 def test_simple_rate_throttle_full_class_lifecycle():
-    class _T(SimpleRateThrottle):
+    class TestThrottle(SimpleRateThrottle):
         rate = "5/min"
         scope = "x"
 
         def get_cache_key(self, request, view):
             return "k"
 
-    throttle = _T()
+    throttle = TestThrottle()
     request = MagicMock()
     for _ in range(5):
-        assert _run(throttle.aallow_request(request, None)) is True
-    assert _run(throttle.aallow_request(request, None)) is False
+        assert run_coro(throttle.aallow_request(request, None)) is True
+    assert run_coro(throttle.aallow_request(request, None)) is False
 
 
 def test_base_throttle_returns_false_via_sync_fallback():
@@ -125,7 +125,7 @@ def test_base_throttle_returns_false_via_sync_fallback():
         def allow_request(self, request, view):
             return False
 
-    assert _run(CustomDeny().aallow_request(MagicMock(), None)) is False
+    assert run_coro(CustomDeny().aallow_request(MagicMock(), None)) is False
 
 
 @override_settings(
@@ -137,28 +137,28 @@ def test_base_throttle_returns_false_via_sync_fallback():
     }
 )
 def test_multiple_throttles_evaluated_independently():
-    class _A(SimpleRateThrottle):
+    class ThrottleA(SimpleRateThrottle):
         rate = "1/min"
         scope = "a"
 
         def get_cache_key(self, request, view):
             return "a"
 
-    class _B(SimpleRateThrottle):
+    class ThrottleB(SimpleRateThrottle):
         rate = "2/min"
         scope = "b"
 
         def get_cache_key(self, request, view):
             return "b"
 
-    a = _A()
-    b = _B()
+    a = ThrottleA()
+    b = ThrottleB()
     request = MagicMock()
-    assert _run(a.aallow_request(request, None)) is True
-    assert _run(a.aallow_request(request, None)) is False
-    assert _run(b.aallow_request(request, None)) is True
-    assert _run(b.aallow_request(request, None)) is True
-    assert _run(b.aallow_request(request, None)) is False
+    assert run_coro(a.aallow_request(request, None)) is True
+    assert run_coro(a.aallow_request(request, None)) is False
+    assert run_coro(b.aallow_request(request, None)) is True
+    assert run_coro(b.aallow_request(request, None)) is True
+    assert run_coro(b.aallow_request(request, None)) is False
 
 
 @override_settings(
@@ -170,15 +170,15 @@ def test_multiple_throttles_evaluated_independently():
     }
 )
 def test_throttle_failure_returns_false_after_history_full():
-    class _T(SimpleRateThrottle):
+    class TestThrottle(SimpleRateThrottle):
         rate = "1/min"
         scope = "deny"
 
         def get_cache_key(self, request, view):
             return "z"
 
-    throttle = _T()
+    throttle = TestThrottle()
     request = MagicMock()
-    _run(throttle.aallow_request(request, None))
-    assert _run(throttle.aallow_request(request, None)) is False
+    run_coro(throttle.aallow_request(request, None))
+    assert run_coro(throttle.aallow_request(request, None)) is False
     assert throttle.wait() is None or throttle.wait() > 0

@@ -51,11 +51,11 @@ def test_request_serializer_class_used_by_validated_serializer():
         response_serializer_class = _OutputSer
 
     view = _bind(
-        V, method="post", data={"name": "alice", "password": "pw"}
+        V, method="post", data={"name": "khan", "password": "pw"}
     )
     ser = view.validated_serializer()
     assert isinstance(ser, _InputSer)
-    assert ser.validated_data == {"name": "alice", "password": "pw"}
+    assert ser.validated_data == {"name": "khan", "password": "pw"}
 
 
 def test_response_serializer_class_used_by_serialized_response():
@@ -64,10 +64,10 @@ def test_response_serializer_class_used_by_serialized_response():
         response_serializer_class = _OutputSer
 
     view = _bind(V)
-    obj = type("O", (), {"pk": 7, "name": "alice"})()
+    obj = type("O", (), {"pk": 7, "name": "khan"})()
     response = view.serialized_response(obj)
     assert response.status_code == 200
-    assert response.data == {"pk": 7, "name": "alice"}
+    assert response.data == {"pk": 7, "name": "khan"}
 
 
 def test_serializer_class_is_unified_default():
@@ -139,7 +139,7 @@ def test_async_avalidated_serializer_uses_request_serializer_class():
         response_serializer_class = _OutputSer
 
     view = _bind(
-        V, method="post", data={"name": "alice", "password": "pw"}
+        V, method="post", data={"name": "khan", "password": "pw"}
     )
     ser = _run(view.avalidated_serializer())
     assert isinstance(ser, _InputSer)

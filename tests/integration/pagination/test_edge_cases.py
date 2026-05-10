@@ -14,16 +14,16 @@ from restflow.pagination import (
 )
 
 
-def _run(coro):
+def run_coro(coro):
     return asyncio.run(coro)
 
 
-def _request(query=""):
+def make_request(query=""):
     factory = RequestFactory()
     return Request(factory.get(f"/?{query}"))
 
 
-class _StubAsyncIter:
+class StubAsyncIter:
     def __init__(self, items):
         self._items = list(items)
 
@@ -35,7 +35,7 @@ class _StubAsyncIter:
             yield item
 
 
-class _StubQuerySet:
+class StubQuerySet:
     def __init__(self, items):
         self._items = list(items)
 
@@ -43,7 +43,7 @@ class _StubQuerySet:
         return len(self._items)
 
     def __getitem__(self, key):
-        sliced = _StubQuerySet(self._items)
+        sliced = StubQuerySet(self._items)
         sliced._items = self._items[key]
         return sliced
 
@@ -51,74 +51,74 @@ class _StubQuerySet:
         return iter(self._items)
 
     def __aiter__(self):
-        return _StubAsyncIter(self._items).__aiter__()
+        return StubAsyncIter(self._items).__aiter__()
 
 
 def test_page_number_with_zero_count_returns_empty_page():
-    qs = _StubQuerySet([])
+    qs = StubQuerySet([])
     paginator = PageNumberPagination()
     paginator.page_size = 5
-    request = _request("page=1")
-    page = _run(paginator.apaginate_queryset(qs, request))
+    request = make_request("page=1")
+    page = run_coro(paginator.apaginate_queryset(qs, request))
     assert page == []
 
 
 def test_page_number_negative_page_raises():
-    qs = _StubQuerySet([1, 2])
+    qs = StubQuerySet([1, 2])
     paginator = PageNumberPagination()
     paginator.page_size = 1
-    request = _request("page=-1")
+    request = make_request("page=-1")
     with pytest.raises(NotFound):
-        _run(paginator.apaginate_queryset(qs, request))
+        run_coro(paginator.apaginate_queryset(qs, request))
 
 
 def test_limit_offset_with_zero_limit_uses_default_limit():
-    qs = _StubQuerySet([1, 2, 3])
+    qs = StubQuerySet([1, 2, 3])
     paginator = LimitOffsetPagination()
     paginator.default_limit = 2
-    request = _request("limit=0&offset=0")
-    page = _run(paginator.apaginate_queryset(qs, request))
+    request = make_request("limit=0&offset=0")
+    page = run_coro(paginator.apaginate_queryset(qs, request))
     assert page == [1, 2]
 
 
 def test_limit_offset_with_negative_offset_treated_as_zero():
-    qs = _StubQuerySet([1, 2, 3])
+    qs = StubQuerySet([1, 2, 3])
     paginator = LimitOffsetPagination()
     paginator.default_limit = 2
-    request = _request("limit=2&offset=-3")
-    page = _run(paginator.apaginate_queryset(qs, request))
+    request = make_request("limit=2&offset=-3")
+    page = run_coro(paginator.apaginate_queryset(qs, request))
     assert page == [1, 2]
 
 
 def test_limit_offset_when_count_zero_returns_empty():
-    qs = _StubQuerySet([])
+    qs = StubQuerySet([])
     paginator = LimitOffsetPagination()
     paginator.default_limit = 5
-    request = _request("limit=5&offset=0")
-    page = _run(paginator.apaginate_queryset(qs, request))
+    request = make_request("limit=5&offset=0")
+    page = run_coro(paginator.apaginate_queryset(qs, request))
     assert page == []
 
 
 def test_fast_page_invalid_negative_page_raises():
     paginator = FastPageNumberPagination()
     paginator.page_size = 3
-    request = _request("page=-5")
+    request = make_request("page=-5")
     with pytest.raises(NotFound):
         paginator.get_page_number(request)
 
 
 def test_fast_page_first_page_no_previous_link():
-    qs = _StubQuerySet(list(range(3)))
+    qs = StubQuerySet(list(range(3)))
     paginator = FastPageNumberPagination()
     paginator.page_size = 3
-    request = _request("page=1")
-    _run(paginator.apaginate_queryset(qs, request))
+    request = make_request("page=1")
+    run_coro(paginator.apaginate_queryset(qs, request))
     response = paginator.get_paginated_response([0, 1, 2])
     assert response.data["previous"] is None
 
 
 def test_base_pagination_can_subclass_only_async_path():
-    class _Async(BasePagination):
+    class AsyncBase(BasePagination):
         async def apaginate_queryset(self, queryset, request, view=None):
             return list(queryset)[:1]
 
@@ -127,80 +127,80 @@ def test_base_pagination_can_subclass_only_async_path():
 
             return Response(data)
 
-    paginator = _Async()
-    page = _run(paginator.apaginate_queryset([1, 2, 3], _request()))
+    paginator = AsyncBase()
+    page = run_coro(paginator.apaginate_queryset([1, 2, 3], make_request()))
     assert page == [1]
 
 
 def test_page_number_pagination_skips_count_when_page_size_none():
     paginator = PageNumberPagination()
     paginator.page_size = None
-    page = _run(paginator.apaginate_queryset(_StubQuerySet([1, 2]), _request()))
+    page = run_coro(paginator.apaginate_queryset(StubQuerySet([1, 2]), make_request()))
     assert page is None
 
 
 def test_fast_page_size_query_param_with_negative_value_uses_default():
-    qs = _StubQuerySet(list(range(10)))
+    qs = StubQuerySet(list(range(10)))
 
-    class _Sized(FastPageNumberPagination):
+    class Sized(FastPageNumberPagination):
         page_size_query_param = "size"
         max_page_size = 10
 
-    paginator = _Sized()
+    paginator = Sized()
     paginator.page_size = 3
-    request = _request("page=1&size=-1")
-    page = _run(paginator.apaginate_queryset(qs, request))
+    request = make_request("page=1&size=-1")
+    page = run_coro(paginator.apaginate_queryset(qs, request))
     assert len(page) == 3
 
 
 def test_fast_page_size_query_param_when_zero_uses_default():
-    qs = _StubQuerySet(list(range(10)))
+    qs = StubQuerySet(list(range(10)))
 
-    class _Sized(FastPageNumberPagination):
+    class Sized(FastPageNumberPagination):
         page_size_query_param = "size"
         max_page_size = 10
 
-    paginator = _Sized()
+    paginator = Sized()
     paginator.page_size = 3
-    request = _request("page=1&size=0")
-    page = _run(paginator.apaginate_queryset(qs, request))
+    request = make_request("page=1&size=0")
+    page = run_coro(paginator.apaginate_queryset(qs, request))
     assert len(page) == 3
 
 
 def test_limit_offset_returns_none_when_default_limit_is_none():
     paginator = LimitOffsetPagination()
     paginator.default_limit = None
-    request = _request()
-    assert _run(paginator.apaginate_queryset(_StubQuerySet([]), request)) is None
+    request = make_request()
+    assert run_coro(paginator.apaginate_queryset(StubQuerySet([]), request)) is None
 
 
 def test_page_number_paginated_response_has_next_and_previous_url():
-    qs = _StubQuerySet(list(range(10)))
+    qs = StubQuerySet(list(range(10)))
     paginator = PageNumberPagination()
     paginator.page_size = 3
-    request = _request("page=2")
-    _run(paginator.apaginate_queryset(qs, request))
+    request = make_request("page=2")
+    run_coro(paginator.apaginate_queryset(qs, request))
     response = paginator.get_paginated_response([3, 4, 5])
     assert "next" in response.data
     assert "previous" in response.data
 
 
 def test_page_number_paginated_response_first_page_previous_none():
-    qs = _StubQuerySet(list(range(10)))
+    qs = StubQuerySet(list(range(10)))
     paginator = PageNumberPagination()
     paginator.page_size = 3
-    request = _request("page=1")
-    _run(paginator.apaginate_queryset(qs, request))
+    request = make_request("page=1")
+    run_coro(paginator.apaginate_queryset(qs, request))
     response = paginator.get_paginated_response([0, 1, 2])
     assert response.data["previous"] is None
 
 
 def test_page_number_paginated_response_last_page_next_none():
-    qs = _StubQuerySet(list(range(7)))
+    qs = StubQuerySet(list(range(7)))
     paginator = PageNumberPagination()
     paginator.page_size = 3
-    request = _request("page=3")
-    _run(paginator.apaginate_queryset(qs, request))
+    request = make_request("page=3")
+    run_coro(paginator.apaginate_queryset(qs, request))
     response = paginator.get_paginated_response([6])
     assert response.data["next"] is None
 
@@ -231,6 +231,6 @@ def test_async_paginator_zero_count_yields_one_page():
 def test_cursor_pagination_falls_back_to_sync_via_async_hook():
     paginator = CursorPagination()
     qs = []
-    request = _request()
-    result = _run(paginator.apaginate_queryset(qs, request))
+    request = make_request()
+    result = run_coro(paginator.apaginate_queryset(qs, request))
     assert result is None or result == []
