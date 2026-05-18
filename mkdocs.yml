@@ -1,4 +1,4 @@
-site_name: drf-restflow
+site_name: Restflow
 site_description: Declarative library for Django REST Framework
 site_url: https://restflow.khanasfireza.dev/
 repo_url: https://github.com/khan-asfi-reza/drf-restflow
@@ -23,9 +23,9 @@ theme:
 
   features:
     - navigation.tabs
-    - navigation.sections
-    - navigation.expand
     - navigation.top
+    - navigation.indexes
+    - toc.follow
     - search.suggest
     - search.highlight
     - content.code.copy
@@ -50,6 +50,21 @@ markdown_extensions:
 plugins:
   - search
   - autorefs
+  - mkdocstrings:
+      handlers:
+        python:
+          options:
+            docstring_style: google
+            show_source: false
+            show_root_heading: true
+            show_root_full_path: false
+            members_order: source
+            separate_signature: true
+            show_signature_annotations: true
+            merge_init_into_class: true
+            heading_level: 2
+            filters:
+              - "!^_"
   - macros:
       module_name: docs/macros
 
@@ -59,19 +74,97 @@ nav:
       - Installation: getting-started/installation.md
       - Quick Start: getting-started/quickstart.md
       - Basic Concepts: getting-started/concepts.md
-  - Tutorial:
-      - Filtering: tutorial/filtering.md
   - Guide:
-      - guide/index.md
+      - Overview: guide/index.md
+      - Caching:
+          - Overview: guide/caching/index.md
+          - Key Constructors: guide/caching/key-constructors.md
+          - cache_result: guide/caching/cache-result.md
+          - Invalidation Rules: guide/caching/invalidation.md
+          - Dispatchers: guide/caching/dispatchers.md
+          - Response Headers: guide/caching/response-headers.md
       - Filtering:
           - FilterSet: guide/filtering/filterset.md
           - Fields: guide/filtering/fields.md
+          - DRF Integration: guide/filtering/integration.md
+      - Serializers:
+          - Overview: guide/serializers/index.md
+          - Type annotations: guide/serializers/type-annotations.md
+          - Model serializers: guide/serializers/model-serializers.md
+          - Inline serializers: guide/serializers/inline.md
+          - ValidatedData: guide/serializers/validated-data.md
+      - Authentication:
+          - Overview: guide/authentication/index.md
+          - JWT: guide/authentication/jwt.md
+          - SimpleJWT adapter: guide/authentication/simplejwt.md
+          - Built-in classes: guide/authentication/built-in.md
+      - Permissions:
+          - Overview: guide/permissions/index.md
+      - Views:
+          - Overview: guide/views/index.md
+          - APIView: guide/views/apiview.md
+          - Generic views: guide/views/generic-views.md
+          - Mixins: guide/views/mixins.md
+          - Viewsets: guide/views/viewsets.md
+          - Action configs: guide/views/action-configs.md
+          - PostFetch: guide/views/post-fetch.md
+      - Pagination:
+          - Overview: guide/pagination/index.md
+      - Throttling:
+          - Overview: guide/throttling/index.md
+      - Responses:
+          - Overview: guide/responses/index.md
+      - Exception handler:
+          - Overview: guide/exception-handler/index.md
+      - Spectacular:
+          - Overview: guide/spectacular/index.md
+      - Testing:
+          - Overview: guide/testing/index.md
+      - Settings: guide/settings.md
+      - Helpers: guide/helpers.md
   - API Reference:
+      - Caching:
+          - cache_result: api/caching/cache-result.md
+          - KeyConstructor: api/caching/key-constructor.md
+          - Key Fields: api/caching/key-fields.md
+          - InvalidationRule: api/caching/invalidation-rule.md
+          - Dispatchers: api/caching/dispatchers.md
       - Filters:
           - FilterSet: api/filters/filterset.md
           - Field: api/filters/field.md
           - Field Types: api/filters/field-types.md
           - InlineFilterSet: api/filters/inline-filterset.md
+          - Backend: api/filters/backend.md
+      - Serializers:
+          - Serializers: api/serializers/serializers.md
+          - Fields: api/serializers/fields.md
+      - Authentication:
+          - JWT: api/authentication/jwt.md
+          - JWT views: api/authentication/jwt-views.md
+          - Blacklist backends: api/authentication/blacklist.md
+          - SimpleJWT: api/authentication/simplejwt.md
+          - Built-in classes: api/authentication/built-in.md
+      - Permissions:
+          - Permission classes: api/permissions/permissions.md
+          - Combinators: api/permissions/combinators.md
+      - Views:
+          - APIView: api/views/apiview.md
+          - Generic views: api/views/generic.md
+          - Mixins: api/views/mixins.md
+          - Viewsets: api/views/viewsets.md
+          - PostFetch: api/views/post-fetch.md
+      - Pagination:
+          - Pagination classes: api/pagination/index.md
+      - Throttling:
+          - Throttle classes: api/throttling/index.md
+      - Responses:
+          - Streaming responses: api/responses/index.md
+      - Exception handler:
+          - Handler and codes: api/exception-handler/index.md
+      - Spectacular:
+          - Schema: api/spectacular/index.md
+      - Testing:
+          - Test client and cases: api/testing/index.md
   - Contributing: contributing.md
   - Changelog: changelog.md
 
