@@ -1,0 +1,3 @@
+# Celery is required for `InvalidationRule(run_on_celery=True)` and the
+# bundled `restflow.caching.tasks` cache-rule task. Optional otherwise.
+celery>=5.0

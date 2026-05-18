@@ -800,7 +800,7 @@ class RelatedField(Field):
         self.exclude = exclude or []
         super().__init__(filter_by=None, **kwargs)
 
-    def clone(self, _type=None, field_name=None, **__):  # noqa: ARG002
+    def clone(self, _type=None, field_name=None, **__):
         return None  # pragma: no cover
 
     def get_model_fields(self):

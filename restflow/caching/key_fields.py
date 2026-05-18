@@ -188,7 +188,7 @@ class ConstantKeyField(CacheKeyField):
         self.key = key
         self.value = value
 
-    def get_key_payload(self, func, args, kwargs) -> dict[str, Any]:  # noqa: ARG002
+    def get_key_payload(self, func, args, kwargs) -> dict[str, Any]:
         return {self.key: str(self.value)}
 
 
@@ -404,7 +404,7 @@ class DrfSerializerKeyField(CacheKeyField):
         super().__init__(partition=False, hash_value=True, sort_lists=True)
         self.serializer_class = serializer_class
 
-    def get_key_payload(self, func, args, kwargs) -> dict[str, Any]:  # noqa: ARG002
+    def get_key_payload(self, func, args, kwargs) -> dict[str, Any]:
         if not self.serializer_class:
             return {}
         serializer_structure = self._get_serializer_structure(
@@ -473,7 +473,7 @@ class DjangoModelKeyField(CacheKeyField):
         super().__init__(partition=False, hash_value=True, sort_lists=True)
         self.model_class = model_class
 
-    def get_key_payload(self, func, args, kwargs) -> dict[str, Any]:  # noqa: ARG002
+    def get_key_payload(self, func, args, kwargs) -> dict[str, Any]:
         if not self.model_class:
             return {}
 

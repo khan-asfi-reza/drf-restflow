@@ -4,7 +4,6 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 
 import jwt as pyjwt
-from asgiref.sync import async_to_sync
 from django.contrib.auth import get_user_model
 from django.core.cache import caches
 from django.core.exceptions import ImproperlyConfigured
@@ -303,25 +302,45 @@ class RefreshToken(_Token):
         cls = AccessToken if token_type == ACCESS_TOKEN_TYPE else RefreshToken
         return cls(payload=payload, raw=encode_token(payload), token_type=token_type)
 
+    def blacklist(self) -> None:
+        """Adds this token's JTI to the configured blacklist backend."""
+        ATokenBlacklist.blacklist(self.jti, expires_at=self.exp)
+
     async def ablacklist(self) -> None:
         """Adds this token's JTI to the configured blacklist backend."""
-        await ATokenBlacklist.add(self.jti, expires_at=self.exp)
+        await ATokenBlacklist.ablacklist(self.jti, expires_at=self.exp)
 
 
 class BlacklistBackend:
     """
     Abstract base for JWT blacklist storage.
-    Subclasses implement add and is_blacklisted, selected via the JWT
-    BLACKLIST_BACKEND setting.
+    Subclasses implement blacklist and is_blacklisted (sync) plus ablacklist,
+    ais_blacklisted, and add (async), selected via the JWT BLACKLIST_BACKEND setting.
     """
 
-    async def add(self, jti: str, *, expires_at: int) -> None:
+    def blacklist(self, jti: str, *, expires_at: int) -> None:
         """Records the JTI as blacklisted until the given expiry timestamp."""
+        raise NotImplementedError
+
+    def _is_blacklisted_sync(self, jti: str) -> bool:
+        """Sync blacklist check for use in synchronous code paths."""
         raise NotImplementedError
 
     async def is_blacklisted(self, jti: str) -> bool:
         """Returns True if the JTI is currently in the blacklist."""
         raise NotImplementedError
+
+    async def ablacklist(self, jti: str, *, expires_at: int) -> None:
+        """Records the JTI as blacklisted until the given expiry timestamp."""
+        raise NotImplementedError
+
+    async def ais_blacklisted(self, jti: str) -> bool:
+        """Returns True if the JTI is currently in the blacklist."""
+        return await self.is_blacklisted(jti)
+
+    async def add(self, jti: str, *, expires_at: int) -> None:
+        """Alias for ablacklist."""
+        await self.ablacklist(jti, expires_at=expires_at)
 
 
 
@@ -355,13 +374,19 @@ class CacheBlacklistBackend(BlacklistBackend):
             raise ImproperlyConfigured(msg)
         self._verified = True
 
-    async def add(self, jti: str, *, expires_at: int) -> None:
+    def blacklist(self, jti: str, *, expires_at: int) -> None:
         """Stores the JTI in the cache with a TTL equal to the token's remaining lifetime."""
         self._verify_backend()
         s = get_jwt_settings()
         cache = caches[s.BLACKLIST_CACHE_ALIAS]
         ttl = max(1, expires_at - int(get_now_time().timestamp()))
-        await cache.aset(self._key(jti), True, timeout=ttl)
+        cache.set(self._key(jti), True, timeout=ttl)
+
+    def _is_blacklisted_sync(self, jti: str) -> bool:
+        self._verify_backend()
+        s = get_jwt_settings()
+        cache = caches[s.BLACKLIST_CACHE_ALIAS]
+        return bool(cache.get(self._key(jti), False))
 
     async def is_blacklisted(self, jti: str) -> bool:
         """Returns True if the JTI is present in the cache."""
@@ -370,6 +395,22 @@ class CacheBlacklistBackend(BlacklistBackend):
         cache = caches[s.BLACKLIST_CACHE_ALIAS]
         return bool(await cache.aget(self._key(jti), False))
 
+    async def ablacklist(self, jti: str, *, expires_at: int) -> None:
+        """Stores the JTI in the cache with a TTL equal to the token's remaining lifetime."""
+        self._verify_backend()
+        s = get_jwt_settings()
+        cache = caches[s.BLACKLIST_CACHE_ALIAS]
+        ttl = max(1, expires_at - int(get_now_time().timestamp()))
+        await cache.aset(self._key(jti), True, timeout=ttl)
+
+    async def ais_blacklisted(self, jti: str) -> bool:
+        """Returns True if the JTI is present in the cache."""
+        return await self.is_blacklisted(jti)
+
+    async def add(self, jti: str, *, expires_at: int) -> None:
+        """Alias for ablacklist."""
+        await self.ablacklist(jti, expires_at=expires_at)
+
 
 class ModelBlacklistBackend(BlacklistBackend):
     """
@@ -377,20 +418,38 @@ class ModelBlacklistBackend(BlacklistBackend):
     Persists revoked JTIs in BlacklistedToken rows. Requires 'restflow.authentication' in INSTALLED_APPS.
     """
 
-    async def add(self, jti: str, *, expires_at: int) -> None:
+    def blacklist(self, jti: str, *, expires_at: int) -> None:
         """Inserts a BlacklistedToken row for the given JTI if one does not already exist."""
         BlacklistedToken = get_blacklisted_token_model()
-        await BlacklistedToken.objects.aget_or_create(
+        BlacklistedToken.objects.get_or_create(
             jti=jti,
-            defaults={
-                "expires_at": datetime.fromtimestamp(expires_at, tz=timezone.utc),
-            },
+            defaults={"expires_at": datetime.fromtimestamp(expires_at, tz=timezone.utc)},
         )
+
+    def _is_blacklisted_sync(self, jti: str) -> bool:
+        BlacklistedToken = get_blacklisted_token_model()
+        return BlacklistedToken.objects.filter(jti=jti).exists()
 
     async def is_blacklisted(self, jti: str) -> bool:
         """Returns True if a BlacklistedToken row exists for the given JTI."""
         BlacklistedToken = get_blacklisted_token_model()
         return await BlacklistedToken.objects.filter(jti=jti).aexists()
+
+    async def ablacklist(self, jti: str, *, expires_at: int) -> None:
+        """Inserts a BlacklistedToken row for the given JTI if one does not already exist."""
+        BlacklistedToken = get_blacklisted_token_model()
+        await BlacklistedToken.objects.aget_or_create(
+            jti=jti,
+            defaults={"expires_at": datetime.fromtimestamp(expires_at, tz=timezone.utc)},
+        )
+
+    async def ais_blacklisted(self, jti: str) -> bool:
+        """Returns True if a BlacklistedToken row exists for the given JTI."""
+        return await self.is_blacklisted(jti)
+
+    async def add(self, jti: str, *, expires_at: int) -> None:
+        """Alias for ablacklist."""
+        await self.ablacklist(jti, expires_at=expires_at)
 
 
 class ATokenBlacklist:
@@ -400,12 +459,35 @@ class ATokenBlacklist:
     """
 
     @staticmethod
+    def blacklist(jti: str, *, expires_at: int) -> None:
+        """Records the JTI as blacklisted using the configured backend."""
+        get_token_blacklist_backend().blacklist(jti, expires_at=expires_at)
+
+    @staticmethod
+    def _sync_is_blacklisted(jti: str) -> bool:
+        if not jti:
+            return False
+        return get_token_blacklist_backend()._is_blacklisted_sync(jti)
+
+    @staticmethod
+    async def is_blacklisted(jti: str) -> bool:
+        """Returns True if the JTI is currently blacklisted."""
+        if not jti:
+            return False
+        return await get_token_blacklist_backend().is_blacklisted(jti)
+
+    @staticmethod
     async def add(jti: str, *, expires_at: int) -> None:
         """Records the JTI as blacklisted using the configured backend."""
         await get_token_blacklist_backend().add(jti, expires_at=expires_at)
 
     @staticmethod
-    async def is_blacklisted(jti: str) -> bool:
+    async def ablacklist(jti: str, *, expires_at: int) -> None:
+        """Records the JTI as blacklisted using the configured backend."""
+        await get_token_blacklist_backend().ablacklist(jti, expires_at=expires_at)
+
+    @staticmethod
+    async def ais_blacklisted(jti: str) -> bool:
         """Returns True if the JTI is currently blacklisted."""
         if not jti:
             return False
@@ -421,8 +503,29 @@ class JWTAuthentication(BaseAuthentication):
     www_authenticate_realm = "api"
 
     def authenticate(self, request):
-        """Sync entry point. Runs the async aauthenticate via async_to_sync so DRF's sync views work."""
-        return async_to_sync(self.aauthenticate)(request)
+        """Returns a (user, token) tuple for the bearer token in the Authorization header, or None when no token is supplied."""
+        s = get_jwt_settings()
+        header = get_authorization_header(request).split()
+        accepted = [t.lower().encode() for t in s.AUTH_HEADER_TYPES]
+        if not header or header[0].lower() not in accepted:
+            return None
+        if len(header) != 2:
+            msg = _("Authorization header must be 'Bearer <token>'.")
+            raise exceptions.AuthenticationFailed(msg, code="invalid_authorization_header")
+        try:
+            raw = header[1].decode()
+        except UnicodeError as exc:
+            msg = _("Token contains invalid characters.")
+            raise exceptions.AuthenticationFailed(msg, code="invalid_token") from exc
+        try:
+            token = AccessToken.verify(raw)
+        except TokenError as exc:
+            raise exceptions.AuthenticationFailed(str(exc), code="invalid_token") from exc
+        if s.BLACKLIST_ENABLED and ATokenBlacklist._sync_is_blacklisted(token.jti):
+            msg = _("Token has been blacklisted.")
+            raise exceptions.AuthenticationFailed(msg, code="token_blacklisted")
+        user = self.get_user(token)
+        return (user, token)
 
     async def aauthenticate(self, request):
         """Returns a (user, token) tuple for the bearer token in the Authorization header, or None when no token is supplied."""
@@ -445,7 +548,7 @@ class JWTAuthentication(BaseAuthentication):
         except TokenError as exc:
             raise exceptions.AuthenticationFailed(str(exc), code="invalid_token") from exc
 
-        if s.BLACKLIST_ENABLED and await ATokenBlacklist.is_blacklisted(token.jti):
+        if s.BLACKLIST_ENABLED and await ATokenBlacklist.ais_blacklisted(token.jti):
             msg = _("Token has been blacklisted.")
             raise exceptions.AuthenticationFailed(msg, code="token_blacklisted")
 
@@ -455,6 +558,27 @@ class JWTAuthentication(BaseAuthentication):
     def authenticate_header(self, request):
         """Returns the WWW-Authenticate header value used on 401 responses."""
         return f'Bearer realm="{self.www_authenticate_realm}"'
+
+    def get_user(self, token: AccessToken):
+        s = get_jwt_settings()
+        user_model = get_user_model()
+        try:
+            user_id = token.payload[s.USER_ID_CLAIM]
+        except KeyError as exc:
+            msg = _("Token contained no recognizable user identification.")
+            raise exceptions.AuthenticationFailed(msg, code="invalid_token") from exc
+        try:
+            user = user_model.objects.get(**{s.USER_ID_FIELD: user_id})
+        except user_model.DoesNotExist as exc:
+            msg = _("User not found.")
+            raise exceptions.AuthenticationFailed(msg, code="user_not_found") from exc
+        if s.CHECK_USER_IS_ACTIVE and not user.is_active:
+            raise exceptions.AuthenticationFailed(_("User is inactive."), code="user_inactive")
+        if s.CHECK_REVOKE_TOKEN and token.payload.get(s.REVOKE_TOKEN_CLAIM) != get_password_hash(user.password):
+            raise exceptions.AuthenticationFailed(
+                _("The user's password has been changed."), code="password_changed"
+            )
+        return user
 
     async def aget_user(self, token: AccessToken):
         s = get_jwt_settings()

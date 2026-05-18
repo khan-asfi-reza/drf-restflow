@@ -58,7 +58,7 @@ class BasicAuthentication(BaseAuthentication, drf_auth.BasicAuthentication):
         return await self.aauthenticate_credentials(userid, password, request)
 
     async def aauthenticate_credentials(self, userid, password, request=None):
-        """Authenticates the userid and password using the configured authentication backends."""
+        """Authenticates the user.<pk>/<username field> and password using the configured authentication backends."""
         credentials = {
             get_user_model().USERNAME_FIELD: userid,
             "password": password,
@@ -134,7 +134,8 @@ class TokenAuthentication(BaseAuthentication, drf_auth.TokenAuthentication):
 class RemoteUserAuthentication(BaseAuthentication, drf_auth.RemoteUserAuthentication):
     """
     REMOTE_USER authentication.
-    Maps the value at request.META[header] to a User via the configured Django auth backend. Adds an async surface using django.contrib.auth.aauthenticate.
+    Maps the value at request.META[header] to a User via the configured Django auth backend.
+    Adds an async surface using django.contrib.auth.aauthenticate.
     """
     async def aauthenticate(self, request):
         """Returns a (user, None) tuple from the configured remote-user header, or None when no active user is resolved."""

@@ -16,12 +16,14 @@ from restflow.authentication.jwt import (
     RefreshToken,
     TokenError,
 )
-from restflow.authentication.jwt_views import (
+from restflow.authentication.serializers import (
     TokenBlacklistSerializer,
-    TokenBlacklistView,
     TokenObtainSerializer,
-    TokenObtainView,
     TokenRefreshSerializer,
+)
+from restflow.authentication.views import (
+    TokenBlacklistView,
+    TokenObtainView,
     TokenRefreshView,
 )
 

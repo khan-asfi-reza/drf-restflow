@@ -11,27 +11,12 @@ from restflow.authentication.jwt import (
     get_jwt_settings,
     get_user_authentication_rule,
 )
-from restflow.serializers import Field, Serializer
+from restflow.authentication.serializers import (
+    TokenBlacklistSerializer,
+    TokenObtainSerializer,
+    TokenRefreshSerializer,
+)
 from restflow.views import AsyncAPIView
-
-
-class TokenObtainSerializer(Serializer):
-    """Validates a username and password pair for a token obtain request."""
-
-    username: str
-    password: str = Field(write_only=True)
-
-
-class TokenRefreshSerializer(Serializer):
-    """Validates a refresh token string."""
-
-    refresh: str
-
-
-class TokenBlacklistSerializer(Serializer):
-    """Validates the refresh token to blacklist."""
-
-    refresh: str
 
 
 class TokenObtainView(AsyncAPIView):
@@ -88,7 +73,7 @@ class TokenRefreshView(AsyncAPIView):
             raise exceptions.AuthenticationFailed(str(exc), code="invalid_token") from exc
 
         jwt_settings = get_jwt_settings()
-        if jwt_settings.BLACKLIST_ENABLED and await ATokenBlacklist.is_blacklisted(refresh.jti):
+        if jwt_settings.BLACKLIST_ENABLED and await ATokenBlacklist.ais_blacklisted(refresh.jti):
             msg = _("Token has been blacklisted.")
             raise exceptions.AuthenticationFailed(msg, code="token_blacklisted")
 

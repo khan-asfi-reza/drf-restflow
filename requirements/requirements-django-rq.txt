@@ -1,0 +1,3 @@
+# django-rq is required when an InvalidationRule sets dispatcher="django_rq".
+# Optional otherwise.
+django-rq>=2.10

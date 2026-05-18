@@ -1,0 +1,3 @@
+# dramatiq is required when an InvalidationRule sets dispatcher="dramatiq".
+# Optional otherwise.
+dramatiq>=1.16

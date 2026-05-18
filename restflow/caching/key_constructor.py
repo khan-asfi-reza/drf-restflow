@@ -224,7 +224,7 @@ class KeyConstructor(metaclass=KeyConstructorMetaClass):
             else self.get_function_identifier(func)
         )
         namespace = self.namespace
-        cache_key = f"{namespace}{prefix}::"
+        cache_key = f"{namespace}{prefix}::" if namespace else f"{prefix}::"
         if scope:
             cache_key += f"{scope}::"
         return cache_key

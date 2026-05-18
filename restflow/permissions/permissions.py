@@ -158,7 +158,7 @@ class BasePermission(drf_perms.BasePermission, metaclass=BasePermissionMetaclass
 class AllowAny(BasePermission, drf_perms.AllowAny):
     """
     Allow any access.
-    Adds an async surface that returns True without a thread hop.
+    Adds an async surface that returns True .
     """
 
     async def ahas_permission(self, request, view):
@@ -169,7 +169,7 @@ class AllowAny(BasePermission, drf_perms.AllowAny):
 class IsAuthenticated(BasePermission, drf_perms.IsAuthenticated):
     """
     Allows access only to authenticated users.
-    Adds an async surface that reads request.user without a thread hop.
+    Adds an async surface that reads request.user .
     """
 
     async def ahas_permission(self, request, view):
@@ -180,7 +180,7 @@ class IsAuthenticated(BasePermission, drf_perms.IsAuthenticated):
 class IsAdminUser(BasePermission, drf_perms.IsAdminUser):
     """
     Allows access only to admin users.
-    Adds an async surface that reads request.user without a thread hop.
+    Adds an async surface that reads request.user .
     """
 
     async def ahas_permission(self, request, view):
@@ -191,7 +191,7 @@ class IsAdminUser(BasePermission, drf_perms.IsAdminUser):
 class IsAuthenticatedOrReadOnly(BasePermission, drf_perms.IsAuthenticatedOrReadOnly):
     """
     The request is authenticated as a user, or is a read-only request.
-    Adds an async surface that resolves without a thread hop.
+    Adds an async surface that resolves .
     """
 
     async def ahas_permission(self, request, view):

@@ -47,6 +47,7 @@ dependencies = [
     "django>=3.2",
     "djangorestframework>=3.14",
     "pyjwt>=2.8",
+    "typing-extensions>=4.15.0",
 ]
 
 [project.optional-dependencies]
@@ -213,6 +214,7 @@ select = [
 ]
 
 ignore = [
+    "ARG002",
     "E501",
     "PLR0913",
     "PLR2004",
@@ -249,11 +251,6 @@ dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
     "F403",
 ]
 
-"restflow/views/mixins.py" = ["ARG002"]
-"restflow/permissions/permissions.py" = ["ARG002"]
-"restflow/pagination/pagination.py" = ["ARG002"]
-"restflow/authentication/jwt.py" = ["ARG002"]
-"restflow/authentication/jwt_views.py" = ["ARG002"]
 "restflow/exceptions.py" = ["PLR0911", "PLR0912", "PLC0415"]
 "restflow/helpers.py" = ["PLR0911", "PLR0912"]
 

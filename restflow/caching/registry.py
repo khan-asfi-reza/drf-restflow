@@ -200,7 +200,7 @@ class CacheRegistry:
             post_delete.connect(self._on_delete, sender=model)
             self._connected_models.add(model)
 
-    def _on_save(self, sender, instance, created, **kwargs):  # noqa: ARG002
+    def _on_save(self, sender, instance, created, **kwargs):
         update_fields = kwargs.get("update_fields")
         transaction.on_commit(
             lambda: self.invalidate_for_instance(
@@ -213,7 +213,7 @@ class CacheRegistry:
             )
         )
 
-    def _on_delete(self, sender, instance, **kwargs):  # noqa: ARG002
+    def _on_delete(self, sender, instance, **kwargs):
         transaction.on_commit(
             lambda: self.invalidate_for_instance(
                 instance,

@@ -1,0 +1,6 @@
+# PostgreSQL dependencies (psycopg 3 / "psycopg")
+#
+# Use this instead of requirements-postgres.txt when you want the modern
+# psycopg driver. Django 4.2+ supports psycopg 3 transparently — same
+# DATABASES["default"]["ENGINE"] = "django.db.backends.postgresql".
+psycopg[binary]>=3.1

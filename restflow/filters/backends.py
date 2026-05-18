@@ -42,7 +42,7 @@ class RestflowFilterBackend(BaseFilterBackend):
                 filterset_class = ProductFilterSet
     """
 
-    def get_filterset_class(self, view, queryset=None) -> type[FilterSet] | None:  # noqa: ARG002
+    def get_filterset_class(self, view, queryset=None) -> type[FilterSet] | None:
         """Return the `FilterSet` class for the view, preferring `view.get_filterset_class()` over `view.filterset_class` when defined."""
         getter = getattr(view, "get_filterset_class", None)
         if callable(getter):
@@ -77,5 +77,5 @@ class RestflowFilterBackend(BaseFilterBackend):
         """Schema parameter generation is delegated to `restflow.spectacular.parameters.build_filterset_parameters`."""
         return build_filterset_parameters(self.get_filterset_class(view))
 
-    def get_schema_fields(self, view):  # noqa: ARG002 # pragma: no cover
+    def get_schema_fields(self, view):  # pragma: no cover
         return []

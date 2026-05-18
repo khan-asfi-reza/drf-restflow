@@ -525,6 +525,7 @@ dependencies = [
     { name = "django" },
     { name = "djangorestframework" },
     { name = "pyjwt" },
+    { name = "typing-extensions" },
 ]
 
 [package.optional-dependencies]
@@ -620,6 +621,7 @@ requires-dist = [
     { name = "psycopg", extras = ["binary"], marker = "extra == 'postgres-psycopg3'", specifier = ">=3.1" },
     { name = "psycopg2-binary", marker = "extra == 'postgres'", specifier = ">=2.9.10" },
     { name = "pyjwt", specifier = ">=2.8" },
+    { name = "typing-extensions", specifier = ">=4.15.0" },
 ]
 provides-extras = ["celery", "django-q", "django-rq", "dramatiq", "postgres", "postgres-psycopg3", "redis", "simplejwt", "spectacular"]
 

@@ -1,0 +1,4 @@
+# django-redis is the recommended cache backend for restflow's caching
+# subsystem. Required for `RESTFLOW_SETTINGS["CACHE"]["BACKEND"] = "redis"`
+# and for the JWT cache-blacklist when using Redis as the cache.
+django-redis>=5.4.0
