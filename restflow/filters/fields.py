@@ -1,16 +1,16 @@
 import datetime
 import decimal
+import inspect
 from collections.abc import Callable
-from types import UnionType
 from typing import (
+    TYPE_CHECKING,
     Any,
     Literal,
-    NewType,
     Optional,
-    Union,
-    get_args,
-    get_origin,
 )
+
+if TYPE_CHECKING:
+    from restflow.filters.filters import FilterSet
 
 from django.db.models import Model, Q, QuerySet
 from django.db.models.fields import Field as DjangoField
@@ -18,8 +18,7 @@ from rest_framework import fields as drf_fields
 from rest_framework.request import Request
 from rest_framework.utils import model_meta
 
-Email = NewType("Email", str)
-IPAddress = NewType("IPAddress", str)
+from restflow.helpers import Email, IPAddress, resolve_field_from_type
 
 LOOKUP_CATEGORIES = {
     "basic": ["exact", "in", "isnull"],
@@ -27,10 +26,10 @@ LOOKUP_CATEGORIES = {
     "comparison": ["gt", "gte", "lt", "lte", ],
     "date": ["date", "year", "month", "day", "week", "week_day", "quarter"],
     "time": ["time", "hour", "minute", "second"],
-    "advanced": ["regex", "iregex"],
     "postgres": ["search", "trigram_similar", "unaccent"],
     "pg_array": ["contains", "overlaps", "contained_by"],
-    "unsafe": ["regex", "iregex"],  # Potentially expensive/dangerous
+    # Regex lookups are potentially expensive/dangerous, opt in explicitly.
+    "unsafe": ["regex", "iregex"],
 }
 
 # Default lookup configuration by Django field type
@@ -112,16 +111,13 @@ def extract_model_fields(model: type[Model], fields: FieldsType, exclude: list[s
     return model_fields
 
 
-def process_lookups(lookups: LookupsType, lookup_categories: list[str]) -> list[str] | dict[str, dict[str, Any]]:
+def process_lookups(lookups: LookupsType, lookup_categories: list[str]) -> list[str] | dict[str, dict[str, Any]] | dict[str, str]:
     #
     # Expand lookup definitions into concrete ORM lookup names.
-    # `lookups` can be:
-    #   -- list/tuple of strings --> returns unique list of lookup names
-    #   -- dict[str, Any] --> expands category keys into concrete keys, and copies the same value to each expanded key
     #
-    # - Category names inside `lookups` expand via LOOKUP_CATEGORIES.
-    # - If `lookups == '__all__', expand all categories from `lookup_categories`.
-    # - Empty / None input → returns [].
+    # - Category names inside list/options-dict form expand via LOOKUP_CATEGORIES.
+    # - If `lookups == '__all__'`, expand all categories from `lookup_categories`.
+    # - Empty / None input -> returns [].
     # `lookup_categories` is more like a default value.
     # Examples:
     # process_lookups([], ["comparison"]) -> ["gt", "gte", "lt", "lte"]
@@ -131,6 +127,9 @@ def process_lookups(lookups: LookupsType, lookup_categories: list[str]) -> list[
     # process_lookups(["comparison"], []) -> ["gt", "gte", "lt", "lte"]
     #
     # process_lookups({"comparison": {"x": 1}}, []) -> {"gt": {"x": 1}, "gte": {"x": 1}, "lt": {"x": 1}, "lte": {"x": 1}}
+    #
+    # Alias form (values are strings - no category expansion):
+    # process_lookups({"max": "lte", "min": "gte"}, []) -> {"max": "lte", "min": "gte"}
     #
     if not lookups:
         return [] if not isinstance(lookups, dict) else {}
@@ -144,6 +143,8 @@ def process_lookups(lookups: LookupsType, lookup_categories: list[str]) -> list[
         msg = "`lookups` must be a list of strings or dict with string keys"
         raise AssertionError(msg)
 
+    if isinstance(lookups, dict) and lookups and all(isinstance(v, str) for v in lookups.values()):
+        return dict(lookups)
 
     expanded = {} if isinstance(lookups, dict) else []
 
@@ -156,7 +157,7 @@ def process_lookups(lookups: LookupsType, lookup_categories: list[str]) -> list[
         else:
             expanded.extend(concrete_lookups)
 
-    return expanded if isinstance(lookups, dict) else list(set(expanded))
+    return expanded if isinstance(lookups, dict) else list(dict.fromkeys(expanded))
 
 
 class Field(drf_fields.Field):
@@ -186,13 +187,26 @@ class Field(drf_fields.Field):
             - List of lookups: ["gte", "lte", "in"] creates price__gte, price__lte, price__in
             - Category name: "basic" expands to ["exact", "in", "isnull"]
             - ALL_FIELDS: Uses all lookups from the field's lookup_categories
-            - Dict of lookup expressions,
-                example: {"lte": {...field options...}}
+            - Alias dict mapping variant suffix -> ORM lookup,
+                example: {"max": "lte", "min": "gte"}.
+                Used together with `lookup_separator` to control how variants are
+                named on the query string. Keys are NOT expanded via lookup categories.
+
+        lookup_separator: Separator placed between the field name and a lookup
+            variant suffix when building variant names. When `None` (the default),
+            the FilterSet's `Meta.lookup_separator` is used, if Meta does not set
+            one either, falls back to `"__"` to match Django's lookup syntax
+            (e.g. `price__gte`).
 
 
         method: Custom filtering method. Can be:
-            - Callable: Function with signature (instance, request, queryset, value) -> QuerySet or Q
-            - String: Name of a method on the FilterSet class
+            - Callable: Function with signature (filterset, queryset, value) -> QuerySet or Q
+            - String: Name of a method on the FilterSet class. The resolved
+              method is called with (queryset, value), the filterset instance
+              is reachable via `self` for instance methods.
+            Either form may be `async def` when the FilterSet is driven via
+            `afilter_queryset`, calling sync `filter_queryset` with an async
+            method raises `TypeError`.
             Cannot be used with filter_by parameter.
 
         allow_negate: If False, prevents automatic creation of the negation field.
@@ -200,7 +214,6 @@ class Field(drf_fields.Field):
 
         negate: If True, inverts the filter to exclude matching results.
             Default is False.
-
 
         required: If True, validation fails when the field is not provided.
             Default is False.
@@ -215,13 +228,21 @@ class Field(drf_fields.Field):
             price = IntegerField(lookups=["gte", "lte", "exact"])
             # Creates: price, price__gte, price__lte, price__exact, price!
 
-        Field with custom method::
+        Field with custom method as a callable::
 
             def filter_by_date_range(filterset, queryset, value):
                 # Some extra business logic
                 return queryset.filter(created_at__range=value)
 
             date_range = Field(method=filter_by_date_range)
+
+        Field with custom method as a string referring to a FilterSet method::
+
+            class ProductFilterSet(FilterSet):
+                date_range = Field(method="filter_by_date_range")
+
+                def filter_by_date_range(self, queryset, value):
+                    return queryset.filter(created_at__range=value)
 
         Field with callable filter_by::
 
@@ -244,6 +265,7 @@ class Field(drf_fields.Field):
             db_field="",
             filter_by: str | Callable[[Any], Any] | dict | None = None,
             lookups: LookupsType = None,
+            lookup_separator: str | None = None,
             method: Callable[[Any, QuerySet, Any], tuple[Q,QuerySet] | Q | QuerySet] | str | None = None,
             negate: bool = False,
             required: bool = False,
@@ -258,17 +280,16 @@ class Field(drf_fields.Field):
             msg = "`method` must be a callable or a string."
             raise TypeError(msg)
 
-        if (method or filter_by) and lookups and not db_field:
+        if (method or filter_by) and lookups:
             msg = (
-                "Cannot generate lookup variants: `db_field` must be set when using `lookups` "
-                "alongside `method` or `filter_by`. Set `db_field` to the base field name "
-                "(e.g., `db_field='price'` to generate 'price__gte', 'price__lte')."
+                "`lookups` cannot be combined with `method` or `filter_by`"
             )
             raise AssertionError(msg)
 
         self.db_field = db_field
         self.filter_by = filter_by
         self.lookups = process_lookups(lookups, self.lookup_categories)
+        self.lookup_separator = lookup_separator
         self.method = method
         self.negate = negate
         self.allow_negate = allow_negate
@@ -277,32 +298,36 @@ class Field(drf_fields.Field):
         kwargs.setdefault("allow_null", False)
         kwargs.setdefault("read_only", False)
         kwargs.setdefault("write_only", False)
-        # Used to clone a field with different options
-        self.clone = self.__create_clone_method(**kwargs)
+        # Stash the residual kwargs so `clone()` can replay them on the cloned field.
+        self._clone_extra_kwargs = dict(kwargs)
         super().__init__(**kwargs)
 
-
-    def __create_clone_method(self, **kwargs):
-        def clone(_type=None, field_name=None, **inner_kwargs):
-            default_kwargs = dict(
-                filter_by=self.filter_by,
-                db_field=self.db_field,
-                lookups=self.lookups,
-                method=self.method,
-                negate=self.negate,
-                **kwargs,
+    def clone(self, _type=None, field_name=None, **inner_kwargs):
+        """Return a copy of this field, optionally re-typed via annotation."""
+        default_kwargs = dict(
+            filter_by=self.filter_by,
+            db_field=self.db_field,
+            lookups=self.lookups,
+            lookup_separator=self.lookup_separator,
+            method=self.method,
+            negate=self.negate,
+            allow_negate=self.allow_negate,
+            **self._clone_extra_kwargs,
+        )
+        default_kwargs.update(inner_kwargs)
+        if _type is not None:
+            return build_filter_field(
+                _type, field_name=field_name, **default_kwargs
             )
-            default_kwargs.update(inner_kwargs)
-            if _type is not None:
-                return get_field_from_type(_type, field_name=field_name, **default_kwargs)
-            return self.__class__(**default_kwargs)
-        return clone
+        return self.__class__(**default_kwargs)
 
     def ensure_db_field(self, db_field: str):
+        """Set db_field to the supplied default when neither filter_by, method, nor db_field is set."""
         if not (self.filter_by or self.method or self.db_field):
             self.db_field = db_field
 
     def get_method(self, filterset=None):
+        """Return the resolved filter method, looking up string method names on the filterset."""
         method = self.method
         if isinstance(method, str):
             method = getattr(filterset, method)
@@ -312,9 +337,53 @@ class Field(drf_fields.Field):
     def _filter_expression(self):
         return self.filter_by or self.db_field or self.field_name
 
+    def _finalize_method(self, result, queryset):
+        # Note: negation is intentionally not applied here. The original sync
+        # implementation only inverted Q objects produced by the filter_by
+        # branch, the method branch passes the user's Q through untouched.
+        # Preserving that to avoid an unrelated behavior change.
+        q = None
+        if isinstance(result, Q):
+            q = result
+        elif isinstance(result, QuerySet):
+            queryset = result
+        return queryset, q
+
+    async def _await_method(self, awaitable, queryset):
+        return self._finalize_method(await awaitable, queryset)
+
+    def _apply_filter_by(self, queryset, value):
+        q = None
+        filter_by = self._filter_expression
+
+        # Lookup expression can either be a string or a function
+        if isinstance(filter_by, str):
+            q = Q(**{filter_by: value})
+
+        elif filter_by is not None and callable(filter_by):
+            filter_by = filter_by(value)
+            if isinstance(filter_by, dict):
+                q = Q(**filter_by)
+
+            elif isinstance(filter_by, Q):
+                q = filter_by
+
+            else:
+                msg = (
+                    f"Invalid lookup expression returned from filter_by "
+                    f"function: `{filter_by}`, must be a `dict` or `django.models.Q` object"
+                )
+                raise AssertionError(
+                    msg
+                )
+        if self.negate and q:
+            q = ~q
+
+        return queryset, q
+
     def apply_filter(
             self,
-            filterset,
+            filterset: "FilterSet",
             queryset: QuerySet,
             value: Any,
     ) -> tuple[QuerySet, Optional[Q]]:
@@ -324,54 +393,37 @@ class Field(drf_fields.Field):
         The original idea is to always send a Q object to support operators, but if a user defines a method
         for this field, it can either return a Q object or a modified queryset.
 
+        If `method` is an `async def` callable, this returns a coroutine that
+        yields the `(queryset, q)` tuple instead. Sync callers should detect
+        the coroutine and raise, async callers should await.
+
         Args:
             filterset: The FilterSet instance that contains this field.
             queryset: The Django queryset to filter.
             value: The validated value from query parameters (already cleaned by DRF validation).
 
         Returns:
-            A tuple of (queryset, q_object) where:
-            - queryset: Modified queryset (or original if using Q objects)
-            - q_object: Q object to be combined with other filters, or None if
-              queryset was modified directly
+            Tuple of (queryset, q_object). queryset is the modified
+                queryset or the original when Q objects are used.
+                q_object is the Q to combine with other filters, or
+                None when the queryset was modified directly. Returns
+                a coroutine yielding that tuple when method= is async.
 
         """
-        q = None
         if self.method:
             method = self.get_method(filterset)
-            qs = method(filterset, queryset, value)
-            if isinstance(qs, Q):
-                q = qs
-            elif isinstance(qs, QuerySet):
-                queryset = qs
+            # String `method` resolves to an attribute on the filterset, an
+            # instance method is already bound so `self` is implicitly the
+            # filterset. Avoid passing it again as an explicit argument.
+            if isinstance(self.method, str):
+                result = method(queryset, value)
+            else:
+                result = method(filterset, queryset, value)
+            if inspect.isawaitable(result):
+                return self._await_method(result, queryset)
+            return self._finalize_method(result, queryset)
 
-        else:
-            filter_by = self._filter_expression
-
-            # Lookup expression can either be a string or a function
-            if isinstance(filter_by, str):
-                q = Q(**{filter_by: value})
-
-            elif filter_by is not None and callable(filter_by):
-                filter_by = filter_by(value)
-                if isinstance(filter_by, dict):
-                    q = Q(**filter_by)
-
-                elif isinstance(filter_by, Q):
-                    q = filter_by
-
-                else:
-                    msg = (
-                        f"Invalid lookup expression returned from filter_by "
-                        f"function: `{filter_by}`, must be a `dict` or `django.models.Q` object"
-                    )
-                    raise AssertionError(
-                        msg
-                    )
-            if self.negate and q:
-                q = ~q
-
-        return queryset, q
+        return self._apply_filter_by(queryset, value)
 
     def __str__(self):
         return (
@@ -489,11 +541,20 @@ class MultipleChoiceField(
     ]
 
     def to_internal_value(self, data):
-        """
-        Convert input data to internal Python representation.
-        """
+        """Convert input data to internal Python representation. Splits comma-separated values whether they arrive as a single string or as elements of a list."""
         if isinstance(data, str):
-            data = set(map(str.strip, data.split(",")))
+            data = {s.strip() for s in data.split(",") if s.strip()}
+        elif isinstance(data, (list, tuple, set)):
+            flat = set()
+            for item in data:
+                if isinstance(item, str):
+                    for piece in item.split(","):
+                        stripped = piece.strip()
+                        if stripped:
+                            flat.add(stripped)
+                else:
+                    flat.add(item)
+            data = flat
         return super().to_internal_value(data)
 
 
@@ -510,7 +571,7 @@ class OrderField(MultipleChoiceField):
         labels: Human-readable labels for display as
             (option_key, label) tuples. If not provided, uses fields parameter.
 
-        override_order_dir: Override Django's default ordering
+        override_order_direction: Override Django's default ordering
             direction. The default is "asc". When set to "desc", the meaning of the "-" prefix
             is reversed.
 
@@ -531,7 +592,7 @@ class OrderField(MultipleChoiceField):
                     fields = ALL_FIELDS
                     order_fields = [("price", "price"), ("name", "name")]
                     order_field_labels = [("price", "Price"), ("name", "Name")]
-                    override_order_dir = "asc"
+                    override_order_direction = "asc"
 
         Usage in a request::
 
@@ -546,9 +607,9 @@ class OrderField(MultipleChoiceField):
     def __init__(
             self,
             *,
-            fields,
-            labels=None,
-            override_order_dir: Literal["asc", "desc"] = "asc",
+            fields: list[tuple[str, str]] | tuple[tuple[str, str], ...],
+            labels: list[tuple[str, str]] | tuple[tuple[str, str], ...] | None = None,
+            override_order_direction: Literal["asc", "desc"] = "asc",
             **kwargs,
     ):
         kwargs.pop("distinct", None)
@@ -559,7 +620,7 @@ class OrderField(MultipleChoiceField):
         kwargs.setdefault("allow_negate", True)
         self.fields = self.process_fields(fields)
         self.labels = self.process_labels(labels or fields)
-        self.override_order_dir = override_order_dir
+        self.override_order_direction = override_order_direction
         self.choices = self.process_choices(self.labels)
         kwargs["choices"] = self.choices
         super().__init__(**kwargs)
@@ -569,7 +630,12 @@ class OrderField(MultipleChoiceField):
         ret = []
         for key, val in fields:
             ret.append((key, val))
-            ret.append((f"-{key}", f"-{val}"))
+            # The descending variant flips the existing `-` prefix on the
+            # model-field side rather than blindly prepending another, so
+            # `("published", "-published_at")` produces the intuitive pair
+            # `("published", "-published_at"), ("-published", "published_at")`.
+            inverted = val[1:] if val.startswith("-") else f"-{val}"
+            ret.append((f"-{key}", inverted))
         return ret
 
     @staticmethod
@@ -583,14 +649,16 @@ class OrderField(MultipleChoiceField):
         return ret
 
     def process_choices(self, choices):
-        override = self.override_order_dir == "desc"
+        # The "-" prefix means "descending" by default. With
+        # `override_order_direction="desc"`,
+        # the prefix is inverted: a bare key
+        # means descending and "-key" means ascending.
+        override = self.override_order_direction == "desc"
         ret = []
         for key, val in choices:
-            suffix = " (Ascending)"
-            if key.startswith("-") and override:
-                suffix = " (Ascending)"
-            elif override or key.startswith("-"):
-                suffix = " (Descending)"
+            has_prefix = key.startswith("-")
+            ascending = has_prefix if override else not has_prefix
+            suffix = " (Ascending)" if ascending else " (Descending)"
             ret.append((key, f"{val}{suffix}"))
         return ret
 
@@ -599,17 +667,31 @@ class OrderField(MultipleChoiceField):
     ) -> tuple[QuerySet, Q | None]:
         if self.method:
             method = self.get_method(filterset)
-            queryset = method(filterset, queryset, value)
+            if isinstance(self.method, str):
+                result = method(queryset, value)
+            else:
+                result = method(filterset, queryset, value)
+            if inspect.isawaitable(result):
+                return self._await_order(result)
+            queryset = result
         else:
+            field_map = dict(self.fields)
+            override = self.override_order_direction == "desc"
+            order_fields = []
             for val in value:
-                order_field = val
-                override = self.override_order_dir == "desc"
-                if val.startswith("-") and override:
-                    order_field = val[1:]
+                order_field = field_map.get(val, val)
+                if order_field.startswith("-") and override:
+                    order_field = order_field[1:]
                 elif override:
-                    order_field = f"-{val}"
-                queryset = queryset.order_by(f"{order_field}")
+                    order_field = f"-{order_field}"
+                order_fields.append(order_field)
+            if order_fields:
+                queryset = queryset.order_by(*order_fields)
         return queryset, None
+
+    @staticmethod
+    async def _await_order(awaitable):
+        return await awaitable, None
 
 
 
@@ -667,7 +749,7 @@ class ListField(
     def __init__(
             self,
             *,
-            child,
+            child: drf_fields.Field,
             filter_by: str | None = None,
             lookups: list[str] | None = None,
             method: Callable[[Request, QuerySet, Any], QuerySet] | None = None,
@@ -685,16 +767,26 @@ class ListField(
 
 
     def to_internal_value(self, data):
-        """
-        Convert input data to internal Python representation.
-        """
+        """Convert input data to internal Python representation. Splits comma-separated values whether they arrive as a single string or as elements of a list."""
         if isinstance(data, str):
-            data = list(map(str.strip, data.split(",")))
+            data = [s.strip() for s in data.split(",") if s.strip()]
+        elif isinstance(data, (list, tuple, set)):
+            flat = []
+            for item in data:
+                if isinstance(item, str):
+                    for piece in item.split(","):
+                        stripped = piece.strip()
+                        if stripped:
+                            flat.append(stripped)
+                else:
+                    flat.append(item)
+            data = flat
         return super().to_internal_value(data)
 
 
 
 class RelatedField(Field):
+    """Filter field that expands into the filter fields of a related Django model."""
 
     def __init__(self, *,
                  model: type[Model],
@@ -708,8 +800,8 @@ class RelatedField(Field):
         self.exclude = exclude or []
         super().__init__(filter_by=None, **kwargs)
 
-    def __create_clone_method(self, **__):
-        return # pragma: no cover
+    def clone(self, _type=None, field_name=None, **__):
+        return None  # pragma: no cover
 
     def get_model_fields(self):
         return extract_model_fields(model=self.model, fields=self.fields, exclude=self.exclude)
@@ -750,37 +842,28 @@ DRF_DATA_TYPE_CHILD_ASSERTION_ERROR = "`annotations` must be in {types}".format(
 )
 
 
-def get_field_from_type(data_type, field_name: str | None = None, **field_kwargs):
+def _filter_list_hook(field_kwargs, field_name, _inner):
+    field_kwargs["filter_by"] = f"{field_name}__in"
+
+
+def build_filter_field(data_type, field_name: str | None = None, **field_kwargs):
     """
-    Convert a Python type annotation into the appropriate Field class instance.
-    This function enables FilterSet to use type annotations for field declarations,
-    automatically selecting the correct Field subclass based on the Python type.
+    Resolve a Python type annotation to the matching filter Field instance.
+
+    Filter-side adapter over `restflow.helpers.resolve_field_from_type`,
+    plugging in the filter type map, list/choice field classes, and the
+    `__in` list_field hook.
     """
-    field_class = DataTypeSerializerMap.get(data_type)
-
-    if get_origin(data_type) == Literal:
-        args = get_args(data_type)
-        field_kwargs["choices"] = tuple(zip(args, args, strict=False))
-        field_class = ChoiceField
-
-    elif (get_origin(data_type) == Union or get_origin(data_type) == UnionType) and type(None) in get_args(data_type):
-        args = get_args(data_type)
-        valid_types = [arg for arg in args if arg is not type(None)]
-        if valid_types and valid_types[0] in DataTypeSerializerMap:
-            field_class = DataTypeSerializerMap.get(valid_types[0])
-
-    elif get_origin(data_type) in [list, list] or data_type is list:
-        args = get_args(data_type)
-        data_type = args[0] if len(args) >= 1 else str
-        field_kwargs["child"] = get_field_from_type(data_type)
-        field_kwargs["filter_by"] = f"{field_name}__in"
-        field_class = ListField
-
-    if not field_class:
-        msg = f"{DRF_DATA_TYPE_CHILD_ASSERTION_ERROR}, not {data_type}"
-        raise AssertionError(msg)
-
-    return field_class(**field_kwargs)
+    return resolve_field_from_type(
+        data_type,
+        type_map=DataTypeSerializerMap,
+        field_name=field_name,
+        list_field_class=ListField,
+        list_field_hook=_filter_list_hook,
+        choice_field_class=ChoiceField,
+        error_message=DRF_DATA_TYPE_CHILD_ASSERTION_ERROR,
+        **field_kwargs,
+    )
 
 
 LOOKUP_DEFAULT_FIELD = {

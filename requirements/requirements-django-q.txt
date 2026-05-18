@@ -1,0 +1,3 @@
+# django-q2 is required when an InvalidationRule sets dispatcher="django_q".
+# Optional otherwise.
+django-q2>=1.7

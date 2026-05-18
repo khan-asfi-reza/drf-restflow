@@ -19,3 +19,9 @@ coverage.xml
 .envrc
 .tox
 .idea
+.ropeproject
+
+# MkDocs build output
+site/
+.ruff_cache/
+.pytest_cache/

@@ -1,20 +1,44 @@
 services:
-  postgres:
-    image: postgres:16-alpine
-    container_name: restflow-postgres
+  
+
+  valkey:
+    image: valkey/valkey:8-alpine
+    container_name: restflow-valkey
     restart: unless-stopped
-    environment:
-      POSTGRES_DB: ${POSTGRES_DB:-test_restflow}
-      POSTGRES_USER: ${POSTGRES_USER:-postgres}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
-      POSTGRES_HOST_AUTH_METHOD: ${POSTGRES_HOST_AUTH_METHOD:-trust}
     ports:
-      - "${POSTGRES_PORT:-5432}:5432"
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-      - ./init-db.sh:/docker-entrypoint-initdb.d/init-db.sh
+      - "${VALKEY_PORT:-6380}:6379"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d test_restflow"]
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - restflow-network
+
+  keydb:
+    image: eqalpha/keydb:latest
+    container_name: restflow-keydb
+    restart: unless-stopped
+    ports:
+      - "${KEYDB_PORT:-6381}:6379"
+    healthcheck:
+      test: ["CMD", "keydb-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - restflow-network
+
+  dragonfly:
+    image: docker.dragonflydb.io/dragonflydb/dragonfly
+    container_name: restflow-dragonfly
+    restart: unless-stopped
+    ulimits:
+      memlock: -1
+    ports:
+      - "${DRAGONFLY_PORT:-6382}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5

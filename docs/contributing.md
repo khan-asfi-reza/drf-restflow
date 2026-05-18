@@ -1,16 +1,47 @@
-# Contributing to drf-restflow
+# Contributing to Restflow
 
-Thanks for considering contributing to `drf-restflow`. This project is building a modern, declarative framework on top of Django REST Framework, heavily inspired by FastAPI, and contributions are welcome.
+Thanks for considering contributing to Restflow. This is a
+declarative library on top of Django REST Framework.
+
 
 # The Vision
 
-`drf-restflow` works on top of DRF, not as a replacement. The project leverages DRF's serializer infrastructure 
-and extends it with declarative patterns such as type annotations, less boilerplate, 
-automatic validation. 
-Right now the project has launched the **filters** module 
-in {{ version_human }}, which leverages DRF serializers for filtering. 
-Planned additions include annotated serializers, 
-caching utilities, and more cool stuff.
+Restflow works on top of DRF. The project
+leverages DRF's serializer and validation infrastructure and adds
+declarative classes for the parts of an API that turn into
+boilerplate over time. Any new idea is welcome.
+
+The library covers:
+
+- **Caching**: declarative cache-key construction, model-signal-driven
+  invalidation, and a pluggable dispatcher layer.
+- **Filtering**: declarative `FilterSet` classes with type
+  annotations, automatic lookup and negation variants, and a DRF
+  backend that emits OpenAPI parameters.
+- **Serializers**: type-driven `Serializer`, `ModelSerializer`,
+  `HyperlinkedModelSerializer`, and `InlineSerializer` with an async
+  surface (`ais_valid`, `asave`, `acreate`, `aupdate`).
+- **Authentication**: async-native JWT auth with PyJWT, built-in
+  obtain/refresh/blacklist views, plus async wrappers for the standard
+  DRF authenticators and an optional adapter for
+  djangorestframework-simplejwt.
+- **Permissions**: async-aware permission classes and async-native
+  subclasses of DRF's `&`, `|`, `~` operator classes.
+- **Views**: full async stack (`AsyncAPIView`, eight generic views,
+  five mixins, four viewsets) with `ActionConfig` for per-action
+  overrides and `PostFetch` for after-pagination joins.
+- **Pagination**: async page-number, limit-offset, cursor, and fast
+  paginators that drive `apaginate_queryset()`.
+- **Throttling**: async throttle classes backed by Django's async
+  cache.
+- **Responses**: streaming JSON, NDJSON, and Server-Sent Events
+  responses for large or open-ended payloads.
+- **Exception handler**: drop-in DRF exception handler that renders
+  every error as a stable envelope.
+- **Spectacular**: drf-spectacular adapter for restflow view
+  conventions.
+- **Testing**: `AsyncAPIClient`, `AsyncAPIRequestFactory`, four async
+  test case bases, and `force_authenticate`.
 
 ## Getting Started
 
@@ -45,9 +76,9 @@ pip install -r requirements/requirements-dev.txt
 ### 1. Create a Branch
 
 ```bash
-git checkout -b feature/your-feature-name
+git checkout -b feature/branch-name
 # or
-git checkout -b fix/your-bug-fix
+git checkout -b fix/branch-name
 ```
 
 ### 2. Make Changes
@@ -70,7 +101,7 @@ pytest --cov=restflow --cov-report=html
 tox
 ```
 
-### 4. Lint Your Code
+### 4. Lint the Code
 
 ```bash
 ruff check restflow
@@ -100,7 +131,7 @@ Follow conventional commit messages:
 ### 6. Push and Create Pull Request
 
 ```bash
-git push origin feature/your-feature-name
+git push origin feature/branch-name
 ```
 
 Then create a pull request on GitHub.
@@ -148,21 +179,15 @@ def function_name(param1: str, param2: int) -> bool:
 - Write tests for all new features
 - Maintain or improve code coverage
 - Use descriptive test names
-- Follow AAA pattern (Arrange, Act, Assert)
 
 ```python
 def test_field_generates_lookup_variants():
-    """Test that field generates correct lookup variants."""
-    # Arrange
     field = IntegerField(lookups=["gte", "lte"])
-
-    # Act
     variants = field.get_lookup_variants()
-
-    # Assert
     assert "gte" in variants
     assert "lte" in variants
 ```
+
 
 ## Project Structure
 
@@ -170,18 +195,28 @@ def test_field_generates_lookup_variants():
 drf-restflow/
 ├── restflow/
 │   ├── __init__.py
-│   └── filters/  # Individual features
-│       ├── __init__.py
-│       ├── fields.py      # Field definitions
-│       └── filters.py     # FilterSet and metaclass
+│   ├── exceptions.py
+│   ├── helpers.py
+│   ├── settings.py
+│   ├── tasks.py
+│   ├── authentication/
+│   ├── caching/
+│   ├── filters/
+│   ├── pagination/
+│   ├── permissions/
+│   ├── responses/
+│   ├── serializers/
+│   ├── spectacular/
+│   ├── test/
+│   ├── throttling/
+│   └── views/
 ├── tests/
 │   ├── conftest.py
 │   ├── models.py
-│   └── filters/
-│       ├── test_fields.py
-│       ├── test_filters.py
-│       └── test_postgres.py
-├── docs/                  # Documentation
+│   ├── smoke/
+│   ├── unit/
+│   └── integration/
+├── docs/
 ├── pyproject.toml
 ├── tox.ini
 └── README.md
@@ -282,7 +317,7 @@ When reporting bugs, include:
    - Python version
    - Django version
    - DRF version
-   - drf-restflow version
+   - Restflow version
 
 Example:
 
@@ -303,7 +338,7 @@ class MyFilterSet(FilterSet):
 - Python 3.12
 - Django 5.0
 - DRF 3.14
-- drf-restflow {{ version }}
+- drf-restflow 
 
 
 ## Feature Requests

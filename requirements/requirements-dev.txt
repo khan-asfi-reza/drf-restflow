@@ -3,3 +3,10 @@
 -r requirements-test.txt
 -r requirements-lint.txt
 -r requirements-postgres.txt
+-r requirements-celery.txt
+-r requirements-redis.txt
+-r requirements-django-q.txt
+-r requirements-django-rq.txt
+-r requirements-dramatiq.txt
+-r requirements-simplejwt.txt
+-r requirements-spectacular.txt

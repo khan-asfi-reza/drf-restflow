@@ -1,0 +1,211 @@
+name: Test restflow
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+env:
+  POSTGRES_DB_URL: postgresql://postgres:postgres@localhost:5432/test_restflow
+  REDIS_URL: redis://localhost:6379/15
+  VALKEY_URL: redis://localhost:6380/15
+  KEYDB_URL: redis://localhost:6381/15
+  DRAGONFLY_URL: redis://localhost:6382/15
+
+jobs:
+  envs:
+    name: enumerate tox envs
+    runs-on: ubuntu-latest
+    outputs:
+      list: ${{ steps.collect.outputs.list }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+
+      - name: Set up Python 3.14
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+          allow-prereleases: true
+
+      - name: Install tox
+        run: uv pip install --system tox tox-uv
+
+      - name: Collect tox envs
+        id: collect
+        run: |
+          envs=$(tox -l \
+            | grep -Ev '^(lint|coverage)$' \
+            | jq -R -s -c 'split("\n") | map(select(length > 0))')
+          echo "list=$envs" >> "$GITHUB_OUTPUT"
+
+  test:
+    name: ${{ matrix.env }}
+    runs-on: ubuntu-latest
+    needs: envs
+    strategy:
+      fail-fast: false
+      matrix:
+        env: ${{ fromJson(needs.envs.outputs.list) }}
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: test_restflow
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      valkey:
+        image: valkey/valkey:8-alpine
+        ports:
+          - 6380:6379
+        options: >-
+          --health-cmd "valkey-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      keydb:
+        image: eqalpha/keydb:latest
+        ports:
+          - 6381:6379
+        options: >-
+          --health-cmd "keydb-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      dragonfly:
+        image: docker.dragonflydb.io/dragonflydb/dragonfly
+        ports:
+          - 6382:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve Python version from env name
+        id: py
+        run: |
+          case "${{ matrix.env }}" in
+            py310-*) v=3.10 ;;
+            py311-*) v=3.11 ;;
+            py312-*) v=3.12 ;;
+            py313-*) v=3.13 ;;
+            py314-*) v=3.14 ;;
+            py315-*) v=3.15 ;;
+            *) echo "Unknown python factor in '${{ matrix.env }}'" >&2; exit 1 ;;
+          esac
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+
+      - name: Set up Python ${{ steps.py.outputs.version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ steps.py.outputs.version }}
+          allow-prereleases: true
+
+      - name: Install tox
+        run: uv pip install --system tox tox-uv
+
+      - name: Run ${{ matrix.env }}
+        run: tox -e "${{ matrix.env }}"
+
+  coverage:
+    name: coverage
+    runs-on: ubuntu-latest
+    needs: test
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: test_restflow
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+
+      - name: Set up Python 3.14
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+          allow-prereleases: true
+
+      - name: Install tox
+        run: uv pip install --system tox tox-uv
+
+      - name: Run coverage
+        run: tox -e coverage
+
+  lint:
+    name: lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+
+      - name: Set up Python 3.14
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+          allow-prereleases: true
+
+      - name: Install tox
+        run: uv pip install --system tox tox-uv
+
+      - name: Run lint
+        run: tox -e lint

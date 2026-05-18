@@ -1,0 +1,4 @@
+# djangorestframework-simplejwt is required to use restflow's simplejwt
+# adapter (`restflow.authentication.SimpleJWTAuthentication`). Optional
+# otherwise; restflow ships its own JWT auth backed by PyJWT.
+djangorestframework-simplejwt>=5.3

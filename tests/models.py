@@ -43,3 +43,19 @@ class RelatedModel(models.Model):
 
     class Meta:
         app_label = "tests"
+
+
+class Tag(models.Model):
+    name = models.CharField(max_length=50)
+
+    class Meta:
+        app_label = "tests"
+
+
+class Article(models.Model):
+    title = models.CharField(max_length=200)
+    body = models.TextField(blank=True)
+    tags = models.ManyToManyField(Tag, related_name="articles", blank=True)
+
+    class Meta:
+        app_label = "tests"

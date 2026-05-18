@@ -1,6 +1,8 @@
+import inspect
 from collections.abc import Callable
 from typing import Any, Literal, Union, cast
 
+from django.core.exceptions import ImproperlyConfigured
 from django.core.handlers.wsgi import WSGIRequest
 from django.db.models import ForeignKey, Model, OneToOneField, Q, QuerySet
 from django.db.models.constants import LOOKUP_SEP
@@ -27,8 +29,14 @@ from restflow.filters.fields import (
     RelatedField,
     StringField,
     TimeField,
+    build_filter_field,
     extract_model_fields,
-    get_field_from_type,
+)
+from restflow.helpers import (
+    RESERVED_SERIALIZER_ATTRS,
+    getattr_multi_source,
+    maybe_await,
+    require_sync,
 )
 
 DJANGO_FIELD_MAP = {
@@ -59,29 +67,10 @@ DJANGO_FIELD_MAP = {
 FieldItems = list[tuple[str, Field]]
 
 
-
-def getattr_multi_source(obj_set: list[Any], attr_name: str, default=None) -> Any:
-    """
-    Gets attribute from the first object in obj_set that has it.
-    Used for merging Meta options from multiple inheritance.
-    """
-    if not obj_set:
-        obj_set = []
-
-    if not isinstance(obj_set, (list, tuple)):
-        obj_set = [obj_set]
-    for obj in obj_set:
-        if not obj:
-            continue
-        value = getattr(obj, attr_name, default)
-        if value is not default:
-            return value
-    return default
-
-
-
 class FilterOptions:
     """
+    Resolved Meta options for a FilterSet.
+
     Attributes:
         model: The Django model to filter against.
         fields: Fields to include in the filterset.
@@ -93,11 +82,15 @@ class FilterOptions:
         order_fields: Available ordering options.
         default_order_fields: Default ordering when none is specified.
         order_field_labels: Display labels for ordering options.
-        override_order_dir: Override default ordering direction.
+        override_order_direction: Override default ordering direction.
         postprocessors: Functions to run after filtering.
         preprocessors: Functions to run before filtering.
         operator: Logical operator for combining filters.
         allow_negate: Enables negation for fields (Only works for annotated fields and model fields).
+        lookup_separator: Default separator used between a field name and its lookup
+            variant suffix (e.g. `price__gte` vs `price_gte`). Field-level
+            `lookup_separator` overrides this, falls back to `LOOKUP_SEP` ("__")
+            when neither is set.
     """
 
     def __init__(self, options: list[Any] | None):
@@ -108,35 +101,50 @@ class FilterOptions:
             tuple[str],
             str,
         ] = getattr_multi_source(options, "fields", [])
-        self.exclude: Union[list[str], tuple[str]] = getattr_multi_source(options, "exclude", [])
+        self.exclude: Union[list[str], tuple[str]] = getattr_multi_source(
+            options, "exclude", []
+        )
 
-        self.extra_kwargs: dict[str, dict[str, Any]] = getattr_multi_source(options, "extra_kwargs", {})
-        self.required_fields = getattr_multi_source(options, "required_fields", []) or []
+        self.extra_kwargs: dict[str, dict[str, Any]] = getattr_multi_source(
+            options, "extra_kwargs", {}
+        )
+        self.required_fields = (
+            getattr_multi_source(options, "required_fields", []) or []
+        )
 
-        self.order_param: str = getattr_multi_source(options, "order_param", "order_by")
+        self.order_param: str = getattr_multi_source(
+            options, "order_param", "order_by"
+        )
         self.order_fields: list[tuple[str, str]] = (
-                getattr_multi_source(options, "order_fields", []) or []
+            getattr_multi_source(options, "order_fields", []) or []
         )
         self.default_order_fields: list[str] = (
-                getattr_multi_source(options, "default_order_fields", []) or []
+            getattr_multi_source(options, "default_order_fields", []) or []
         )
         self.order_field_labels: list[tuple[str, str]] = (
-                getattr_multi_source(options, "order_field_labels", []) or []
+            getattr_multi_source(options, "order_field_labels", []) or []
         )
-        self.override_order_dir: Literal["asc", "desc"] = getattr_multi_source(
-            options, "override_order_dir", "asc"
+        self.override_order_direction: Literal["asc", "desc"] = getattr_multi_source(
+            options, "override_order_direction", "asc"
         )
 
         self.postprocessors: list[Callable[[FilterSet, QuerySet], Any]] = (
-                getattr_multi_source(options, "postprocessors", []) or []
+            getattr_multi_source(options, "postprocessors", []) or []
         )
         self.preprocessors: list[Callable[[FilterSet, QuerySet], Any]] = (
-                getattr_multi_source(options, "preprocessors", []) or []
+            getattr_multi_source(options, "preprocessors", []) or []
         )
 
         self.allow_negate = getattr_multi_source(options, "allow_negate", True)
 
-        self.related_fields = getattr_multi_source(options, "related_fields", [])
+        self.lookup_separator: str = (
+            getattr_multi_source(options, "lookup_separator", LOOKUP_SEP)
+            or LOOKUP_SEP
+        )
+
+        self.related_fields = getattr_multi_source(
+            options, "related_fields", []
+        )
 
         operator = getattr_multi_source(options, "operator", "AND")
         self.operator = (operator or "AND").upper()
@@ -154,14 +162,10 @@ class FilterMetaClass(SerializerMetaclass):
     """
 
     def __new__(cls, name, bases: tuple[type[Any]], attrs: dict[str, Any]):
-        # Instead of using class Meta, MetaOptions is used to store all options.
-        # This way not all options need to be re-initiated.
-        # Only the re-initiated option in the final class will be updated,
-        # the rest will be inherited from base classes
-        _options = [attrs.get("Meta")] + [getattr(base, "_meta", None) for base in bases]
-        meta_options = FilterOptions(
-            options=_options
-        )
+        _options = [attrs.get("Meta")] + [
+            getattr(base, "_meta", None) for base in bases
+        ]
+        meta_options = FilterOptions(options=_options)
         # Restrict using Meta class directly in favor of FilterOptions
         attrs.pop("Meta", None)
         attrs["_meta"] = meta_options
@@ -170,20 +174,35 @@ class FilterMetaClass(SerializerMetaclass):
         klass = type.__new__(cls, name, bases, attrs)
         declared_fields = cls._get_all_fields(klass, bases, attrs, meta_options)
         klass._declared_fields = declared_fields
+        cls._validate_string_methods(klass, declared_fields)
         return klass
 
     @classmethod
+    def _validate_string_methods(cls, klass, declared_fields):
+        for field_name, field in declared_fields.items():
+            method = getattr(field, "method", None)
+            if isinstance(method, str) and not callable(getattr(klass, method, None)):
+                msg = (
+                    f"{klass.__name__}.{field_name} declares method={method!r} "
+                    f"but {klass.__name__} does not define a callable {method!r}."
+                )
+                raise ImproperlyConfigured(msg)
+
+    @classmethod
     def _get_all_fields(
-            cls, klass: type[Any], bases: tuple[type[Any]], attrs: dict[str, Any], options: FilterOptions
+        cls,
+        klass: type[Any],
+        bases: tuple[type[Any]],
+        attrs: dict[str, Any],
+        options: FilterOptions,
     ) -> dict[str, Field]:
         # Returns all declared fields, inherited fields
-        # Also makes sure the order field is the last one
         base_fields = cls._get_base_fields(bases, attrs)
         user_fields = cls._get_user_defined_fields(
             klass=klass, attrs=attrs, options=options
         )
         order_field_config = cls._extract_order_field(user_fields, options)
-        extended_fields = cls._generate_field_variants(user_fields,)
+        extended_fields = cls._generate_field_variants(user_fields, options)
         all_fields = dict(base_fields + extended_fields)
 
         if order_field_config:
@@ -192,7 +211,9 @@ class FilterMetaClass(SerializerMetaclass):
         return all_fields
 
     @classmethod
-    def _get_base_fields(cls, bases: tuple[type[Any]], attrs: dict[str, Any]) -> FieldItems:
+    def _get_base_fields(
+        cls, bases: tuple[type[Any]], attrs: dict[str, Any]
+    ) -> FieldItems:
         # Handle inherited fields, make sure the re-declared fields
         # are not fetched from parent classes
         known_attrs = set(attrs)
@@ -211,15 +232,13 @@ class FilterMetaClass(SerializerMetaclass):
 
     @classmethod
     def _get_user_defined_fields(
-            cls, klass: type[Any], attrs: dict[str, Any], options: FilterOptions
+        cls, klass: type[Any], attrs: dict[str, Any], options: FilterOptions
     ) -> FieldItems:
-        # Field generation priority (which source wins for the same field name)
+        # Field generation priority:
         #   explicit declarations > annotations > Meta.fields
         #
-        # Output order (position in fields dict):
+        # Output order:
         #   annotations appear first, then explicit, then model fields
-        #   Note: Cannot preserve exact declaration order for annotated fields
-        #   due to Python's annotation handling
 
         explicit_fields = cls._get_explicit_fields(klass, options, attrs)
         explicit_names = {name for name, _ in explicit_fields}
@@ -238,20 +257,28 @@ class FilterMetaClass(SerializerMetaclass):
         return annotated_fields + explicit_fields + model_fields
 
     @classmethod
-    def _get_explicit_fields(cls, klass, options, attrs: dict[str, Any], ) -> FieldItems:
+    def _get_explicit_fields(
+        cls,
+        klass,
+        options,
+        attrs: dict[str, Any],
+    ) -> FieldItems:
         # Explicit field declaration and FilterSet declarations
         annotations = getattr(klass, "__annotations__", {})
         fields = [
             (field_name, attrs.pop(field_name))
             for field_name, obj in list(attrs.items())
-            if isinstance(obj, drf_fields.Field) and not isinstance(obj, FilterSet)
-               and not (obj.__class__ is Field and field_name in annotations)
+            if isinstance(obj, drf_fields.Field)
+            and not isinstance(obj, FilterSet)
+            and not (obj.__class__ is Field and field_name in annotations)
         ]
         fields.sort(key=lambda x: getattr(x[1], "_creation_counter", 0))
         return cls._extract_related_fields(fields, options)
 
     @classmethod
-    def _extract_related_fields(cls, fields: FieldItems, options: FilterOptions) -> FieldItems:
+    def _extract_related_fields(
+        cls, fields: FieldItems, options: FilterOptions
+    ) -> FieldItems:
         # Expand RelatedField instances into their constituent fields.
         expanded = []
 
@@ -264,7 +291,7 @@ class FilterMetaClass(SerializerMetaclass):
                     options=options,
                     exclude_fields=set(field.negate or []),
                     extra_kwargs=field.extra_kwargs,
-                    field_name_prefix=field_name
+                    field_name_prefix=field_name,
                 )
                 expanded.extend(filter_fields)
             else:
@@ -274,7 +301,7 @@ class FilterMetaClass(SerializerMetaclass):
 
     @classmethod
     def _build_fields_from_annotations(
-            cls, klass: type[Any], existing_fields: set, options: FilterOptions
+        cls, klass: type[Any], existing_fields: set, options: FilterOptions
     ) -> FieldItems:
         # Gets the fields that have annotation
         # It will either create respective data type oriented Field
@@ -284,55 +311,66 @@ class FilterMetaClass(SerializerMetaclass):
         for field_name, field_type in annotated_fields.items():
             if field_name in existing_fields:
                 continue
+            if field_name in RESERVED_SERIALIZER_ATTRS:
+                msg = (
+                    f"`{field_name}` collides with a FilterSet attribute. "
+                    f"Choose a different name."
+                )
+                raise ValueError(msg)
             field = getattr(klass, field_name, None)
             # For annotations with following
             # eg: field1: int = Field(...)
-            # it will build the field
-            # with the appropriate type by passing arguments of the declared field into the generated field.
+            # it must build the field with the appropriate type by passing arguments of the declared field into the generated field.
             if field and field.__class__ is Field:
-                annotated.append((field_name, field.clone(
-                    _type=field_type,
-                    field_name=field_name,
-                )))
+                annotated.append(
+                    (
+                        field_name,
+                        field.clone(
+                            _type=field_type,
+                            field_name=field_name,
+                        ),
+                    )
+                )
                 continue
 
-            default_kwargs = {"allow_negate": options.allow_negate, "db_field": field_name}
+            default_kwargs = {
+                "allow_negate": options.allow_negate,
+                "db_field": field_name,
+            }
             default_kwargs.update(options.extra_kwargs.get(field_name, {}))
-            field_obj = get_field_from_type(
-                field_type,
-                field_name=field_name,
-                **default_kwargs
+            field_obj = build_filter_field(
+                field_type, field_name=field_name, **default_kwargs
             )
             annotated.append((field_name, field_obj))
         return annotated
 
     @classmethod
-    def _generate_model_fields(cls, options: FilterOptions, existing_names: set[str]) -> FieldItems:
+    def _generate_model_fields(
+        cls, options: FilterOptions, existing_names: set[str]
+    ) -> FieldItems:
         # Generate fields from a Django model if Meta.fields is configured as `__all__` or a list of field names
         if not options or options.model is None:
             return []
 
         model_fields = extract_model_fields(
-            model=options.model,
-            fields=options.fields,
-            exclude=options.exclude
+            model=options.model, fields=options.fields, exclude=options.exclude
         )
 
         return cls._extract_django_model_fields(
             model_fields=model_fields,
             options=options,
             extra_kwargs=options.extra_kwargs,
-            exclude_fields=existing_names
+            exclude_fields=existing_names,
         )
 
     @classmethod
     def _extract_django_model_fields(
-            cls,
-            model_fields: list[Any],
-            options: FilterOptions,
-            extra_kwargs: dict[str, dict[str, Any]],
-            exclude_fields: set[str] | None=None,
-            field_name_prefix: str | None=None
+        cls,
+        model_fields: list[Any],
+        options: FilterOptions,
+        extra_kwargs: dict[str, dict[str, Any]],
+        exclude_fields: set[str] | None = None,
+        field_name_prefix: str | None = None,
     ) -> FieldItems:
         # Extracts fields from django fields, creates appropriate FilterField objects
         fields = []
@@ -347,7 +385,10 @@ class FilterMetaClass(SerializerMetaclass):
                 continue
 
             # Skip reverse relations by default
-            if hasattr(django_field, "related_model") and django_field.one_to_many:
+            if (
+                hasattr(django_field, "related_model")
+                and django_field.one_to_many
+            ):
                 continue
 
             field_type = django_field.__class__.__name__
@@ -355,12 +396,11 @@ class FilterMetaClass(SerializerMetaclass):
             field_kwargs = extra_kwargs.get(field_name, {})
 
             kwargs = {}
-            kwargs.setdefault("filter_by", f"{django_field.name}")
             kwargs.setdefault("db_field", f"{django_field.name}")
             kwargs.setdefault("lookups", [])
 
             if isinstance(django_field, (ForeignKey, OneToOneField)):
-                # For relations, use the related field's ID
+                # For relations, route through the related PK explicitly.
                 kwargs["filter_by"] = f"{django_field.name}__pk"
                 if field_name in options.related_fields:
                     related_fields = cls._extract_django_model_fields(
@@ -368,7 +408,7 @@ class FilterMetaClass(SerializerMetaclass):
                         options=options,
                         extra_kwargs=extra_kwargs,
                         field_name_prefix=field_name,
-                        exclude_fields=field_kwargs.get("exclude") or set()
+                        exclude_fields=field_kwargs.get("exclude") or set(),
                     )
                     fields.extend(related_fields)
                     continue
@@ -377,10 +417,12 @@ class FilterMetaClass(SerializerMetaclass):
                 field_class = ChoiceField
                 kwargs["choices"] = django_field.choices
 
-            elif field_type == "ArrayField": # Postgres ArrayField
+            elif field_type == "ArrayField":  # Postgres ArrayField
                 kwargs["lookups"] = ["pg_array"]
                 base_field = django_field.base_field.__class__.__name__
-                kwargs["child"] = DJANGO_FIELD_MAP.get(base_field, StringField)()
+                kwargs["child"] = DJANGO_FIELD_MAP.get(
+                    base_field, StringField
+                )()
 
             kwargs.update(field_kwargs)
             filter_field = field_class(**kwargs)
@@ -393,10 +435,11 @@ class FilterMetaClass(SerializerMetaclass):
         return fields
 
     @classmethod
-    def _extract_order_field(cls, fields: FieldItems, options: FilterOptions) -> tuple[str, Field] | None:
+    def _extract_order_field(
+        cls, fields: FieldItems, options: FilterOptions
+    ) -> tuple[str, Field] | None:
         # Gets the order field or sets order fields from the options
-        # Note: this will temporarily remove the order field from the field list
-        # Later to be added via _get_and_attach_order_field()
+        # This will temporarily remove the order field from the field list
         order_fields = [
             (idx, name, field)
             for idx, (name, field) in enumerate(fields)
@@ -417,7 +460,7 @@ class FilterMetaClass(SerializerMetaclass):
                 labels=options.order_field_labels,
                 default=options.default_order_fields,
                 fields=options.order_fields,
-                override_order_dir=options.override_order_dir,
+                override_order_direction=options.override_order_direction,
             )
 
             return options.order_param, field
@@ -425,71 +468,104 @@ class FilterMetaClass(SerializerMetaclass):
         return None
 
     @classmethod
-    def _generate_field_variants(cls, base_fields: FieldItems, ) -> FieldItems:
+    def _generate_field_variants(
+        cls, base_fields: FieldItems, options: FilterOptions
+    ) -> FieldItems:
         # Generate all possible / provided field variants
         # Negate fields for provided fields and lookup fields
         field_order = {name: idx for idx, (name, _) in enumerate(base_fields)}
         all_variants = list(base_fields)
 
         for field_name, field in base_fields:
-            all_variants.extend(cls._create_lookup_variants(field_name, field))
+            all_variants.extend(
+                cls._create_lookup_variants(field_name, field, options)
+            )
 
         negated_fields = []
 
         for field_name, field in all_variants:
-            negated_fields.extend(cls._create_negation_variant(field_name, field))
+            negated_fields.extend(
+                cls._create_negation_variant(field_name, field)
+            )
 
         all_variants.extend(negated_fields)
         cls._sort_by_base_field_order(all_variants, field_order)
         return all_variants
 
-
     @classmethod
-    def _create_lookup_variants(cls, field_name: str, field: Field) -> FieldItems:
-        # Create additional fields for each lookup type (e.g., field__gte, field__lte)
+    def _create_lookup_variants(
+        cls, field_name: str, field: Field, options: FilterOptions
+    ) -> FieldItems:
+        # Create additional fields for each lookup type (e.g., field__gte, field__lte).
+        # Variant-name separator precedence: field.lookup_separator > Meta.lookup_separator > LOOKUP_SEP.
+        # ORM-side expression always uses LOOKUP_SEP regardless of the user-facing separator.
         if field.method or callable(field.filter_by):
             return []
-
 
         lookups = getattr(field, "lookups", []) or []
         variants = []
 
-        lookup_fields = list(lookups.keys()) if isinstance(lookups, dict) else lookups
+        separator = (
+            field.lookup_separator
+            if field.lookup_separator is not None
+            else options.lookup_separator
+        )
 
-        for lookup in lookup_fields:
-            variant_name = f"{field_name}{LOOKUP_SEP}{lookup}"
-            variant_expr = f"{field.db_field}{LOOKUP_SEP}{lookup}"
-            field_kwargs = {
-                "filter_by": variant_expr,
-                "lookups": []
-            }
+        if isinstance(lookups, dict):
+            items = list(lookups.items())
+        else:
+            items = [(lookup, None) for lookup in lookups]
 
-            field_class = LOOKUP_DEFAULT_FIELD.get(lookup)
+        for alias, mapped_value in items:
+            orm_lookup = (
+                mapped_value if isinstance(mapped_value, str) else alias
+            )
+
+            variant_name = f"{field_name}{separator}{alias}"
+            variant_expr = f"{field.db_field}{LOOKUP_SEP}{orm_lookup}"
+            field_kwargs = {"filter_by": variant_expr, "lookups": []}
+
+            field_class = LOOKUP_DEFAULT_FIELD.get(orm_lookup)
             cloned_class = field.clone(**field_kwargs)
 
             if field_class and field_class == ListField:
                 field_kwargs["child"] = cloned_class
 
-            lookup_field = field_class(**field_kwargs) if field_class else cloned_class
+            lookup_field = (
+                field_class(**field_kwargs) if field_class else cloned_class
+            )
+            lookup_field._base_field_name = field_name
             variants.append((variant_name, lookup_field))
 
         return variants
 
     @classmethod
-    def _create_negation_variant(cls, field_name: str, field: Field,) -> FieldItems:
+    def _create_negation_variant(
+        cls,
+        field_name: str,
+        field: Field,
+    ) -> FieldItems:
         if field.allow_negate:
             negation_name = f"{field_name}!"
-            return [(negation_name, field.clone(negate=True))]
+            negated = field.clone(negate=True)
+            negated._base_field_name = getattr(
+                field, "_base_field_name", field_name
+            )
+            return [(negation_name, negated)]
         return []
 
-
     @classmethod
-    def _sort_by_base_field_order(cls, fields:FieldItems, order_map):
-        # This will make sure all the fields are ordered based on their declaration
-        # For variants, it will rely on their parent field's order
-        def get_base_name(field_name):
-            return field_name.split(LOOKUP_SEP)[0].split("!")[0]
-        fields.sort(key=lambda x: order_map.get(get_base_name(x[0]), 0))
+    def _sort_by_base_field_order(cls, fields: FieldItems, order_map):
+        # Order all fields by their declaration order, variants follow their parent.
+        # Prefer the explicit `_base_field_name` set when variants are built, fall back
+        # to splitting on the default LOOKUP_SEP for fields that predate variant tagging.
+        def get_base_name(name, field_obj):
+            base = getattr(field_obj, "_base_field_name", None)
+            if base is not None:
+                return base
+            return name.split(LOOKUP_SEP)[0].split("!")[0]
+
+        fields.sort(key=lambda x: order_map.get(get_base_name(x[0], x[1]), 0))
 
     @classmethod
     def _get_and_attach_order_field(cls, field_dict, order_config):
@@ -510,7 +586,6 @@ class FilterMetaClass(SerializerMetaclass):
         return name
 
 
-
 class FilterSet(Serializer, metaclass=FilterMetaClass):
     """
     A declarative way to filter Django `querysets`.
@@ -518,6 +593,9 @@ class FilterSet(Serializer, metaclass=FilterMetaClass):
     FilterSet extends rest_framework.serializers.Serializer to provide query parameter validation and queryset
     filtering. It supports type annotations, explicit field declarations, and automatic
     field generation from Django models.
+    Fields automatically generate negation variants (e.g., "price!" for not equal), control via `allow_negate` property in fields.
+    Lookup fields are generated from the lookups parameter (e.g., "price__gte").
+    Field priority: explicit declarations > type annotations > Meta.fields
 
     Attributes:
         request (Request): The DRF request object containing query parameters.
@@ -545,7 +623,7 @@ class FilterSet(Serializer, metaclass=FilterMetaClass):
         order_field_labels (List[Tuple[str, str]]): Human-readable labels for ordering
             options as (query_value, label) tuples.
 
-        override_order_dir (Literal["asc", "desc"]): Override Django's default ordering
+        override_order_direction (Literal["asc", "desc"]): Override Django's default ordering
             direction. Use "desc" to reverse the meaning of the "-" prefix. The default is "asc".
 
         preprocessors (List[Callable[[FilterSet, QuerySet], QuerySet]]): Functions called
@@ -558,6 +636,12 @@ class FilterSet(Serializer, metaclass=FilterMetaClass):
             Default is "AND".
 
         allow_negate (bool): Enables negation for fields (Only works for annotated fields and model fields).
+
+        lookup_separator (str): Default separator placed between a field name and
+            its lookup variant suffix. Field-level `lookup_separator` overrides
+            this, falls back to `"__"` when neither is set. Useful with
+            alias-form lookups like `{"max": "lte"}` to produce `price_max`
+            instead of `price__max`.
 
     Methods:
         model_dump() -> dict:
@@ -599,27 +683,20 @@ class FilterSet(Serializer, metaclass=FilterMetaClass):
                 filtered_queryset = filterset.filter_queryset(queryset)
                 return Response (data=list(filtered_queryset.values()))
 
-    Note:
-        - Fields automatically generate negation variants (e.g., "price!" for not equal), allow_negate=True.
-        - Lookup fields are generated from the lookups parameter (e.g., "price__gte")
-        - Field priority: explicit declarations > type annotations > Meta.fields
     """
 
     def __init__(
-            self,
-            data=None,
-            request: Request | WSGIRequest | HttpRequest = None,
+        self,
+        data=None,
+        request: Request | WSGIRequest | HttpRequest = None,
     ):
         self.request = request
         # Flexibility for users
         if data is None and request:
-            data = getattr(request, "query_params", {}) or getattr(request, "GET", {})
-        super().__init__(
-            data=data,
-            context={
-                "request": request
-            }
-        )
+            data = getattr(request, "query_params", {}) or getattr(
+                request, "GET", {}
+            )
+        super().__init__(data=data, context={"request": request})
 
     def get_options(self):
         return getattr(self, "_meta", None)
@@ -628,12 +705,9 @@ class FilterSet(Serializer, metaclass=FilterMetaClass):
         msg = "`many=True` is not supported."
         raise NotImplementedError(msg)
 
-    def model_dump(self):
+    def model_dump(self) -> dict[str, Any]:
         """
         Validate query parameters and return cleaned data as a dictionary.
-
-        Returns:
-            dict: Dictionary of validated query parameters.
 
         Raises:
             ValidationError: If validation fails.
@@ -643,22 +717,63 @@ class FilterSet(Serializer, metaclass=FilterMetaClass):
         return self.validated_data
 
     def _apply_processors(
-            self, queryset: QuerySet, processor_type: Literal["pre", "post"]
+        self, queryset: QuerySet, processor_type: Literal["pre", "post"]
     ):
-        # Runs preprocessors or postprocessors on the queryset
         options = self.get_options()
-        processors = getattr(options, f"{processor_type}processors", [])
-        for processor in processors:
-            queryset = processor(self, queryset)
+        processors = getattr(options, f"{processor_type}processors", []) or []
+        for i, processor in enumerate(processors):
+            result = processor(self, queryset)
+            if inspect.isawaitable(result):
+                return self._await_processors_tail(result, processors[i + 1:])
+            queryset = result
+        return queryset
+
+    async def _await_processors_tail(self, current, remaining):
+        queryset = await current
+        for processor in remaining:
+            result = processor(self, queryset)
+            if inspect.isawaitable(result):
+                result = await result
+            queryset = result
+        return queryset
+
+    @staticmethod
+    def _combine_q_objects(queryset, q_objects, operator):
+        if not q_objects:
+            return queryset
+        combined_q = q_objects[0]
+        for q_obj in q_objects[1:]:
+            if operator == "OR":
+                combined_q |= q_obj
+            elif operator == "XOR":
+                combined_q ^= q_obj
+            else:  # AND
+                combined_q &= q_obj
+        return queryset.filter(combined_q)
+
+    @staticmethod
+    def _absorb_field_result(result, queryset, q_objects):
+        if isinstance(result, tuple):
+            queryset, q_obj = result
+        else:
+            q_obj = result
+        if isinstance(q_obj, Q):
+            q_objects.append(q_obj)
+        elif isinstance(q_obj, QuerySet):
+            queryset = q_obj
         return queryset
 
     def filter_queryset(
-            self,
-            queryset: QuerySet,
-            ignore=None,
+        self,
+        queryset: QuerySet,
+        ignore=None,
     ):
         """
         Apply validated filters to a queryset and return the filtered result.
+
+        This is the synchronous entry point. If any callable
+        (`method=`, preprocessor, postprocessor) is `async def`, this raises
+        `TypeError` pointing at `afilter_queryset`.
 
         Args:
             queryset (QuerySet): The Django queryset to filter.
@@ -668,48 +783,67 @@ class FilterSet(Serializer, metaclass=FilterMetaClass):
 
         Raises:
             ValidationError: If query parameters fail validation.
+            TypeError: If a user-supplied callable returns a coroutine.
 
         """
         options = self.get_options()
         validated_data = self.model_dump()
-        queryset = self._apply_processors(queryset, "pre")
+        queryset = require_sync(
+            self._apply_processors(queryset, "pre"), "afilter_queryset"
+        )
         ignore = ignore or []
 
         q_objects = []
         for field_name, value in validated_data.items():
             field = self.fields.get(field_name)
             if field is None or field_name in ignore:
-                continue    # pragma: no cover
-            result = field.apply_filter(
-                filterset=self, queryset=queryset, value=value
+                continue  # pragma: no cover
+            result = require_sync(
+                field.apply_filter(filterset=self, queryset=queryset, value=value),
+                "afilter_queryset",
             )
+            queryset = self._absorb_field_result(result, queryset, q_objects)
 
-            # Handle both tuple and single return values
-            if isinstance(result, tuple):
-                queryset, q_obj = result
-            else:
-                q_obj = result
+        queryset = self._combine_q_objects(queryset, q_objects, options.operator)
+        return require_sync(
+            self._apply_processors(queryset, "post"), "afilter_queryset"
+        )
 
-            if isinstance(q_obj, Q):
-                q_objects.append(q_obj)
+    async def afilter_queryset(
+        self,
+        queryset: QuerySet,
+        ignore=None,
+    ):
+        """
+        Async `filter_queryset`. Callables (`method=`,
+        preprocessors, postprocessors) may be `async def`, sync ones still
+        work, so a single FilterSet may freely mix both.
 
-            elif isinstance(q_obj, QuerySet):
-                queryset = q_obj
+        Args:
+            queryset: The Django queryset to filter.
+            ignore: List of field names to ignore. Defaults to None.
 
-        if q_objects:
-            operator = options.operator
-            combined_q = q_objects[0]
+        Returns:
+            QuerySet: The filtered queryset after applying all filters and processors.
 
-            for q_obj in q_objects[1:]:
-                if operator == "OR":
-                    combined_q |= q_obj
-                elif operator == "XOR":
-                    combined_q ^= q_obj
-                else:  # AND
-                    combined_q &= q_obj
-            queryset = queryset.filter(combined_q)
+        """
+        options = self.get_options()
+        validated_data = self.model_dump()
+        queryset = await maybe_await(self._apply_processors(queryset, "pre"))
+        ignore = ignore or []
 
-        return self._apply_processors(queryset, "post")
+        q_objects = []
+        for field_name, value in validated_data.items():
+            field = self.fields.get(field_name)
+            if field is None or field_name in ignore:
+                continue  # pragma: no cover
+            result = await maybe_await(
+                field.apply_filter(filterset=self, queryset=queryset, value=value)
+            )
+            queryset = self._absorb_field_result(result, queryset, q_objects)
+
+        queryset = self._combine_q_objects(queryset, q_objects, options.operator)
+        return await maybe_await(self._apply_processors(queryset, "post"))
 
 
 class InlineFilterSet:
@@ -718,21 +852,22 @@ class InlineFilterSet:
     This factory function generates a FilterSet class on-the-fly, useful for creating
     simple filtersets without the boilerplate of class definitions.
     """
+
     def __new__(
-            cls,
-            name: str | None = None,
-            fields: dict[str, Union[Field, type]] | None = None,
-            extra_kwargs: dict[str, dict] | None = None,
-            model: type[Model] | None = None,
-            order_param: str = "",
-            order_fields: list[tuple[str, str]] | None = None,
-            default_order_fields: list[str] | None = None,
-            order_field_labels: list[tuple[str, str]] | None = None,
-            override_order_dir: Literal["asc", "desc"] | None = None,
-            postprocessors: list[Callable[[FilterSet, QuerySet], Any]] | None = None,
-            preprocessors: list[Callable[[FilterSet, QuerySet], Any]] | None = None,
-            operator: Literal["AND", "OR", "XOR"] = "AND",
-            allow_negate:bool = True,
+        cls,
+        name: str | None = None,
+        fields: dict[str, Union[Field, type]] | None = None,
+        extra_kwargs: dict[str, dict] | None = None,
+        model: type[Model] | None = None,
+        order_param: str = "",
+        order_fields: list[tuple[str, str]] | None = None,
+        default_order_fields: list[str] | None = None,
+        order_field_labels: list[tuple[str, str]] | None = None,
+        override_order_direction: Literal["asc", "desc"] | None = None,
+        postprocessors: list[Callable[[FilterSet, QuerySet], Any]] | None = None,
+        preprocessors: list[Callable[[FilterSet, QuerySet], Any]] | None = None,
+        operator: Literal["AND", "OR", "XOR"] = "AND",
+        allow_negate: bool = True,
     ) -> type[FilterSet]:
         """
         Create a FilterSet class dynamically without defining a class explicitly.
@@ -749,7 +884,7 @@ class InlineFilterSet:
             order_fields: List of (query_value, model_field) tuples for ordering options.
             default_order_fields: Default ordering fields to apply.
             order_field_labels: List of (query_value, label) tuples for display.
-            override_order_dir: Override ordering direction ("asc" or "desc").
+            override_order_direction: Override ordering direction ("asc" or "desc").
             postprocessors: Functions to run after filtering.
             preprocessors: Functions to run before filtering.
             operator: Logical operator for combining filters ("AND", "OR", or "XOR").
@@ -773,7 +908,7 @@ class InlineFilterSet:
             "order_fields": order_fields,
             "default_order_fields": default_order_fields,
             "order_field_labels": order_field_labels,
-            "override_order_dir": override_order_dir,
+            "override_order_direction": override_order_direction,
             "postprocessors": postprocessors,
             "preprocessors": preprocessors,
             "operator": operator,
@@ -789,7 +924,9 @@ class InlineFilterSet:
             MetaConfig["fields"] = (
                 "__all__"
                 if not fields
-                else fields if isinstance(fields, list | tuple) else []
+                else fields
+                if isinstance(fields, list | tuple)
+                else []
             )
 
         if isinstance(fields, dict):
@@ -797,7 +934,9 @@ class InlineFilterSet:
                 if isinstance(field, Field):
                     attrs[field_name] = field
                 else:
-                    attrs[field_name] = get_field_from_type(field, field_name=field_name)
+                    attrs[field_name] = build_filter_field(
+                        field, field_name=field_name
+                    )
 
         name = name if name else "_FilterSet"
 
