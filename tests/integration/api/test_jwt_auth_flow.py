@@ -8,7 +8,7 @@ from django.urls import path
 from rest_framework.response import Response
 
 from restflow.authentication import JWTAuthentication
-from restflow.authentication.jwt_views import (
+from restflow.authentication.views import (
     TokenBlacklistView,
     TokenObtainView,
     TokenRefreshView,

@@ -54,7 +54,7 @@ def _user(pk=42, active=True):
 def test_obtain_view_returns_access_and_refresh_for_valid_credentials(monkeypatch):
     user = _user(pk=1)
     monkeypatch.setattr(
-        "restflow.authentication.jwt_views.django_aauthenticate",
+        "restflow.authentication.views.django_aauthenticate",
         AsyncMock(return_value=user),
     )
     response = _post(
@@ -71,7 +71,7 @@ def test_obtain_view_returns_access_and_refresh_for_valid_credentials(monkeypatc
 
 def test_obtain_view_rejects_bad_password(monkeypatch):
     monkeypatch.setattr(
-        "restflow.authentication.jwt_views.django_aauthenticate",
+        "restflow.authentication.views.django_aauthenticate",
         AsyncMock(return_value=None),
     )
     response = _post(
@@ -83,7 +83,7 @@ def test_obtain_view_rejects_bad_password(monkeypatch):
 
 def test_obtain_view_rejects_inactive_user(monkeypatch):
     monkeypatch.setattr(
-        "restflow.authentication.jwt_views.django_aauthenticate",
+        "restflow.authentication.views.django_aauthenticate",
         AsyncMock(return_value=_user(active=False)),
     )
     response = _post(
