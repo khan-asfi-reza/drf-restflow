@@ -5,6 +5,77 @@ All notable changes to drf-restflow will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.0] - 2026-05-19
+
+### Added
+
+#### Serializers
+
+- `Serializer`, `ModelSerializer`, and `HyperlinkedModelSerializer` with annotation-driven field declaration using Python type hints
+- `Field` sentinel for layering DRF kwargs on top of annotated fields
+- Full async surface: `ais_valid`, `arun_validation`, `ato_internal_value`, `asave`, `acreate`, `aupdate`, `ato_representation`
+- `ModelSerializer` ships default async `acreate` and `aupdate` that mirror DRF's sync logic using the async ORM
+- `InlineSerializer` factory for building serializer classes at runtime without a dedicated class definition
+- `ValidatedData` dict subclass with attribute access and `to_json()` helper
+- `Email`, `IPAddress`, and `BlankableString` type aliases; `SerializerFieldMap` for custom type-to-field mappings
+- `DecimalField` subclass with sensible default precision (`max_digits=20`, `decimal_places=6`)
+
+#### Views
+
+- `APIView` with the helper surface (`get_serializer`, `validated_serializer`, `serialized_response`, `paginated_response`) on top of DRF's sync view
+- `AsyncAPIView` with a fully async dispatch loop and async twins for every helper
+- Async generic views: `AsyncListAPIView`, `AsyncCreateAPIView`, `AsyncRetrieveAPIView`, `AsyncUpdateAPIView`, `AsyncDestroyAPIView`, and all composite combinations
+- Async model mixins: `AsyncCreateModelMixin`, `AsyncListModelMixin`, `AsyncRetrieveModelMixin`, `AsyncUpdateModelMixin`, `AsyncDestroyModelMixin`
+- `AsyncViewSet`, `AsyncGenericViewSet`, `AsyncReadOnlyModelViewSet`, `AsyncModelViewSet`
+- `ActionConfig` dataclass for per-action serializer, permission, throttle, parser, renderer, pagination, and queryset overrides
+- `request_serializer_class` / `response_serializer_class` split on viewsets and `APIView`
+- `PostFetch` helper for attaching related rows to paginated lists outside of `prefetch_related`
+
+#### Authentication
+
+- Async-aware `BaseAuthentication` with `aauthenticate` on every built-in DRF class: `BasicAuthentication`, `SessionAuthentication`, `TokenAuthentication`, `RemoteUserAuthentication`
+- Built-in JWT authentication (`JWTAuthentication`) with access and refresh tokens, blacklist support via pluggable backends, refresh token rotation, and configurable claims
+- Pre-built JWT views: `ObtainTokenView`, `RefreshTokenView`, `VerifyTokenView`
+- `SimpleJWTAdapter` for projects already using `djangorestframework-simplejwt`
+
+#### Permissions
+
+- Async-aware variants of all standard DRF permission classes with `ahas_permission` and `ahas_object_permission`
+- Boolean combinators: `AND`, `OR`, `NOT` for composing permission rules without subclassing
+
+#### Throttling
+
+- Async-aware `SimpleRateThrottle`, `AnonRateThrottle`, `UserRateThrottle`, `ScopedRateThrottle` with `aallow_request` and `await_`
+
+#### Pagination
+
+- `AsyncPageNumberPagination`, `AsyncLimitOffsetPagination`, `AsyncCursorPagination`
+- `FastPageNumberPagination` (omits `count` for performance)
+
+#### Responses
+
+- `NDJSONResponse` for newline-delimited JSON streaming
+- `StreamingJSONListResponse` for streaming a JSON array
+- `SSEResponse` for Server-Sent Events with automatic `X-Accel-Buffering: no`
+
+#### Exception handler
+
+- `restflow_exception_handler` with structured error codes alongside DRF's standard detail/code shape
+
+#### Caching
+
+- Async-aware cache key constructors
+
+#### Spectacular (drf-spectacular integration)
+
+- `RestflowAutoSchema` resolving `action_configs`, `request_serializer_class` / `response_serializer_class`, and per-action pagination
+- `add_filterset_parameters` postprocessing hook that injects filter query parameters for any view declaring `filterset_class`, including plain `APIView`
+
+#### Testing
+
+- `AsyncAPIClient` and `AsyncRequestFactory` for testing async views without `sync_to_async` wrappers
+- `AsyncAPITestCase` base class
+
 ## [1.0.0a2] - 2025-12-03
 
 ### Breaking Changes

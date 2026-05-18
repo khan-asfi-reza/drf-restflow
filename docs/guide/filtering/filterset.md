@@ -1,42 +1,34 @@
 # FilterSet
 
-Complete guide to FilterSet covering everything from basics to advanced usage, Meta options, ordering, fields overview, PostgreSQL features, and all important caveats.
+`FilterSet` is the core class of the filtering subsystem. It validates
+query parameters and applies filters to a Django queryset using
+DRF's serializer infrastructure underneath.
 
-## Table of Contents
+## FilterSet
 
-- [What is FilterSet](#what-is-filterset)
-- [Creating FilterSets](#creating-filtersets)
-- [Meta Options](#meta-options)
-- [Field Overview](#field-overview)
-- [Using FilterSets](#using-filtersets)
-- [Ordering](#ordering)
-- [Operators](#operators)
-- [Preprocessors](#preprocessors)
-- [Postprocessors](#postprocessors)
-- [Validation](#validation)
-- [PostgreSQL Features](#postgresql-features)
-- [Important Caveats](#important-caveats)
-- [Best Practices](#best-practices)
-
-## What is FilterSet
-
-FilterSet is the core class in drf-restflow. It validates query parameters and applies filters to Django querysets using a declarative, type-safe syntax.
+A `FilterSet` is a declarative class that validates incoming query
+parameters and applies filters to a Django queryset.
 
 ```python
 from restflow.filters import FilterSet
+
 
 class ProductFilterSet(FilterSet):
     name: str
     price: int
 
-# Usage: ?name=laptop&price=999
+
+# request: ?name=laptop&price=999
 ```
 
 ## Creating FilterSets
 
-### Type Annotations (Simplest)
+### Type annotations
 
 ```python
+from datetime import datetime
+
+
 class ProductFilterSet(FilterSet):
     name: str
     price: int
@@ -44,7 +36,7 @@ class ProductFilterSet(FilterSet):
     created_at: datetime
 ```
 
-### Explicit Field Declarations
+### Explicit field declarations
 
 ```python
 from restflow.filters import FilterSet, StringField, IntegerField
@@ -56,120 +48,163 @@ class ProductFilterSet(FilterSet):
     category = IntegerField(filter_by="category__id")
 ```
 
-### Model-Based Generation
+### Model-based generation
 
 ```python
 class ProductFilterSet(FilterSet):
     class Meta:
         model = Product
-        fields = ['name', 'price', 'category']  # Specific fields
+        fields = ["name", "price", "category"]
         # or
-        fields = '__all__'  # All model fields
+        fields = "__all__"
 ```
 
-### Mixed Approach
-
-Combine custom fields with model-based generation:
+### Mixed approach
 
 ```python
+from restflow.filters import FilterSet, StringField, BooleanField
+
+
 class ProductFilterSet(FilterSet):
-    # Custom fields
     search = StringField(method="filter_search")
     trending = BooleanField(method="filter_trending")
 
-    # Model-based fields
     class Meta:
         model = Product
-        fields = ['category', 'in_stock', 'price']
+        fields = ["category", "in_stock", "price"]
 
-    def filter_search(self, filterset, queryset, value):
+    def filter_search(self, queryset, value):
         return Q(name__icontains=value) | Q(description__icontains=value)
 
-    def filter_trending(self, filterset, queryset, value):
+    def filter_trending(self, queryset, value):
         if value:
             week_ago = timezone.now() - timedelta(days=7)
             return Q(created_at__gte=week_ago, views__gte=100)
         return Q()
 ```
 
-### InlineFilterSet (Dynamic)
+### InlineFilterSet
 
-Create FilterSets dynamically without class definition:
+`InlineFilterSet` is a factory that builds a FilterSet class on the
+fly. The signature mirrors the Meta options of a class-based
+FilterSet, so the same knobs are available without writing the
+class boilerplate.
 
 ```python
 from restflow.filters import InlineFilterSet
 
+
 ProductFilterSet = InlineFilterSet(
     model=Product,
-    fields=['name', 'price', 'category']
+    fields=["name", "price", "category"],
 )
 
-# Or with more options
 ProductFilterSet = InlineFilterSet(
     model=Product,
-    fields=['name', 'price'],
+    fields=["name", "price"],
     extra_kwargs={
-        'name': {'lookups': ['icontains']},
-        'price': {'min_value': 0}
-    }
+        "name": {"lookups": ["icontains"]},
+        "price": {"min_value": 0},
+    },
 )
 ```
 
-## Meta Options
+Either `model` or `fields` is required. Calling with neither raises
+`ValueError`. The factory returns a `FilterSet` subclass that can
+be used anywhere a class-based FilterSet works (`RestflowFilterBackend`,
+direct `filter_queryset` calls, manual instantiation).
 
-The `Meta` class configures FilterSet behavior. All options are optional.
+| Argument | Type | Default | Effect |
+|---|---|---|---|
+| `name` | `str` | derived from model name or `_FilterSet` | Class name on the generated subclass. |
+| `fields` | `dict[str, Field \| type]` or `list[str]` | `None` | Explicit field declarations or a model field name list. |
+| `extra_kwargs` | `dict[str, dict]` | `{}` | Per-field overrides applied to model-generated fields. |
+| `model` | `type[Model]` | `None` | Django model the FilterSet filters against. |
+| `order_param` | `str` | `""` | Query parameter name for ordering. Empty string disables auto-generation when `order_fields` is also empty. |
+| `order_fields` | `list[tuple[str, str]]` | `None` | Pairs of (query value, model field) used by the auto-generated `OrderField`. |
+| `default_order_fields` | `list[str]` | `None` | Ordering applied when the request does not pick one. |
+| `order_field_labels` | `list[tuple[str, str]]` | `None` | Display labels for the ordering options. |
+| `override_order_direction` | `"asc"` or `"desc"` or `None` | `None` | Forces direction regardless of the prefix on the query value. |
+| `preprocessors` | `list[Callable]` | `None` | Functions that run before filters are applied. |
+| `postprocessors` | `list[Callable]` | `None` | Functions that run after filters are applied. |
+| `operator` | `"AND"` or `"OR"` or `"XOR"` | `"AND"` | Logical operator combining filter conditions. |
+| `allow_negate` | `bool` | `True` | Generates negation variants for model and annotated fields. |
 
-### Complete Meta Options Reference
+When `fields` is a dict, each value is either a `Field` instance or
+a Python type. Type values go through the same resolution path as
+class-level annotations, so `IntegerField`, `StringField`,
+`BooleanField`, and the rest are picked up automatically.
+
+### Field declaration priority
+
+When the same field is declared in multiple ways, the priority is:
+
+**Explicit declarations > Type annotations > Model fields**
+
+```python
+class ProductFilterSet(FilterSet):
+    # this takes precedence
+    name = StringField(lookups=["icontains"])
+
+    # this is ignored
+    name: str
+
+    class Meta:
+        model = Product
+        fields = ["name"]            # ignored: explicit declaration wins
+        extra_kwargs = {
+            "name": {"allow_negate": False},  # also ignored
+        }
+```
+
+## Meta options
+
+The `Meta` class configures FilterSet behaviour. Every option is
+optional.
 
 ```python
 class ProductFilterSet(FilterSet):
     class Meta:
-        # Model configuration
-        model = Product                    # Django model to generate fields from
-        fields = ['name', 'price']         # Fields to include ('__all__' for all)
-        exclude = ['internal_id']          # Fields to exclude
+        # model configuration
+        model = Product
+        fields = ["name", "price"]
+        exclude = ["internal_id"]
 
-        # Field configuration
-        extra_kwargs = {                   # Configure fields without explicit declaration
-            'name': {
-                'lookups': ['icontains', 'istartswith'],
-                'required': True,
-                'min_length': 2,
-                'help_text': 'Product name'
+        # field configuration
+        extra_kwargs = {
+            "name": {
+                "lookups": ["icontains", "istartswith"],
+                "required": True,
+                "min_length": 2,
+                "help_text": "Product name",
             },
-            'price': {
-                'lookups': ['comparison'],
-                'min_value': 0,
-                'max_value': 1000000
-            }
+            "price": {
+                "lookups": ["comparison"],
+                "min_value": 0,
+                "max_value": 1000000,
+            },
         }
 
-        # Operator
-        operator = "AND"                   # Combine filters with AND/OR/XOR (default: AND)
+        # operator
+        operator = "AND"
 
-        # Ordering
-        order_fields = [                   # Fields available for ordering
-            ('name', 'name'),              # (model_field, query_param)
-            ('price', 'price'),
-            ('created_at', 'created_at'),
+        # ordering
+        order_fields = [
+            ("name", "name"),
+            ("price", "price"),
+            ("created_at", "created_at"),
         ]
-        default_order_fields = ["price"]     # Default order field
-        order_param = "order_by"            # Order query parameter name
-        override_order_dir = "asc"          # Overrides an order direction, if set to "desc" then `-field` will be in ascending order 
-        # Processors
-        preprocessors = [                  # Functions to run before filtering
-            exclude_deleted,
-            apply_permissions,
-        ]
-        postprocessors = [                 # Functions to run after filtering
-            apply_default_ordering,
-            ensure_distinct,
-        ]
+        default_order_fields = ["price"]
+        order_param = "order_by"
+        override_order_direction = "asc"
+        order_field_labels = [("name", "Name"), ("price", "Price")]
+
+        # processors
+        preprocessors = [exclude_deleted, apply_permissions]
+        postprocessors = [apply_default_ordering, ensure_distinct]
 ```
 
 ### model
-
-Specify the Django model to generate fields from:
 
 ```python
 class Meta:
@@ -178,249 +213,293 @@ class Meta:
 
 ### fields
 
-Specify which fields to include:
-
 ```python
-# Specific fields
 class Meta:
     model = Product
-    fields = ['name', 'price', 'category']
+    fields = ["name", "price", "category"]   # specific fields
 
-# All fields
 class Meta:
     model = Product
-    fields = '__all__'
+    fields = "__all__"                        # all model fields
 
-# No fields (only custom fields)
 class Meta:
     model = Product
-    fields = []
+    fields = []                                # only custom fields
 ```
 
 ### exclude
 
-Exclude specific fields from generation:
-
 ```python
 class Meta:
     model = Product
-    fields = '__all__'
-    exclude = ['internal_id', 'secret_key']
+    fields = "__all__"
+    exclude = ["internal_id", "secret_key"]
 ```
 
 ### extra_kwargs
 
-Configure fields without explicit declarations:
+Configures fields without explicit declarations.
 
 ```python
 class Meta:
     model = Product
-    fields = ['name', 'price', 'category', 'status']
+    fields = ["name", "price", "category", "status"]
     extra_kwargs = {
-        'name': {
-            'lookups': ['icontains', 'istartswith'],  # Add lookup variations
-            'required': True,                         # Make required
-            'min_length': 2,                          # Validation
-            'max_length': 200,
-            'help_text': 'Product name to search'
+        "name": {
+            "lookups": ["icontains", "istartswith"],
+            "required": True,
+            "min_length": 2,
+            "max_length": 200,
+            "help_text": "Product name to search",
         },
-        'price': {
-            'lookups': ['comparison'],                # Add gt, gte, lt, lte
-            'min_value': 0,                           # Must be >= 0
-            'max_value': 1000000,                     # Must be <= 1000000
-            'validators': [custom_validator]          # Custom validators
+        "price": {
+            "lookups": ["comparison"],
+            "min_value": 0,
+            "max_value": 1000000,
+            "validators": [custom_validator],
         },
-        'category': {
-            'filter_by': 'category__id',            # Custom lookup expression
-            'required': False
+        "category": {
+            "filter_by": "category__id",
+            "required": False,
         },
-        'status': {
-            'choices': [                              # Limit to choices
-                ('draft', 'Draft'),
-                ('published', 'Published')
-            ]
-        }
+        "status": {
+            "choices": [("draft", "Draft"), ("published", "Published")],
+        },
     }
 ```
 
-**extra_kwargs options:**
-- `db_field`: Corresponding model/queryset field
-- `lookups`: List of lookup expressions to generate
-- `filter_by`: Custom lookup expression
-- `required`: Make field required
-- `min_value`, `max_value`: Numeric validation
-- `min_length`, `max_length`: String validation
-- `validators`: List of custom validators
-- `choices`: Limit to specific choices
-- `help_text`: Description for API documentation
-- `method`: Custom filter method name
+`extra_kwargs` accepts:
+
+- `db_field`, `lookups`, `filter_by`, `method`
+- `required`, `min_value`, `max_value`, `min_length`, `max_length`,
+  `validators`, `choices`, `help_text`
 - Any other DRF field parameter
 
 ### operator
 
-Control how filters are combined (default: `"AND"`):
+Controls how filters combine. The default is `"AND"`.
 
 ```python
-# All filters must match (default)
 class Meta:
-    operator = "AND"
+    operator = "AND"   # all filters must match (default)
 
-# Any filter can match
 class Meta:
-    operator = "OR"
+    operator = "OR"    # any filter can match
 
-# Exactly one filter must match
 class Meta:
-    operator = "XOR"
+    operator = "XOR"   # exactly one filter must match
 ```
 
-See [Operators](#operators) section for details.
+See [Operators](#operators).
 
 ### order_fields
 
-Define which fields can be used for ordering:
-
 ```python
 class Meta:
-    order_param = "sort_by"    # Query param responsible for ordering 
+    order_param = "sort_by"
     order_fields = [
-        ('name', 'name'),               # Can order by:`?sort_by=name` or `?sort_by=-name`
-        ('price', 'price'),
-        ('created_at', 'created_at'),
-        ('review_count', 'reviews'),   # Annotated field
+        ("name", "name"),
+        ("price", "price"),
+        ("created_at", "created_at"),
+        ("review_count", "reviews"),
     ]
-    
-    default_order_fields = ["price"]  # If the value is empty, the queryset will be ordered by price
-    order_field_labels = [("Item Name", "name")]  # For schema generation / viewing
-    override_order_dir = "desc"  # This will reverse the ordering, queryset.order_by("-price"), will order by price in ascending order
-                                # and .order_by("price") will sort by price in descending order
+    default_order_fields = ["price"]
+    order_field_labels = [("name", "Name"), ("price", "Price")]
+    override_order_direction = "desc"
 ```
 
-See [Ordering](#ordering) section for details.
+See [Ordering](#ordering).
 
 ### preprocessors
 
-Functions that run **before** filters are applied:
+Functions that run before filters are applied.
 
 ```python
 def exclude_deleted(filterset, queryset):
     return queryset.filter(deleted_at__isnull=True)
 
+
 class Meta:
     preprocessors = [exclude_deleted]
 ```
 
-See [Preprocessors](#preprocessors) section for details.
+See [Preprocessors](#preprocessors).
 
 ### postprocessors
 
-Functions that run **after** filters are applied:
+Functions that run after filters are applied.
 
 ```python
 def apply_default_ordering(filterset, queryset):
     if not queryset.ordered:
-        return queryset.order_by('-created_at')
+        return queryset.order_by("-created_at")
     return queryset
+
 
 class Meta:
     postprocessors = [apply_default_ordering]
 ```
 
-See [Postprocessors](#postprocessors) section for details.
+See [Postprocessors](#postprocessors).
 
-## Field Overview
+### allow_negate
 
-FilterSet supports various field types. See [Fields](fields.md) for complete details.
+Controls whether negation variants (`field!`) are generated for
+fields. The default is `True`. Set to `False` to drop the variants
+across the whole FilterSet, or override per field by passing
+`allow_negate=False` to a field.
 
-### Available Field Types
+```python
+class Meta:
+    model = Product
+    fields = "__all__"
+    allow_negate = False
+```
+
+The Meta value applies to fields generated from the model and from
+type annotations. Explicitly declared fields keep the value passed
+to the field constructor. See [Negation](#negation).
+
+### lookup_separator
+
+The separator placed between a field name and its lookup variant
+suffix. Defaults to Django's `LOOKUP_SEP` (`"__"`), so the variant
+of `price` with `gte` is `price__gte`.
+
+```python
+class Meta:
+    model = Product
+    fields = "__all__"
+    lookup_separator = "_"
+```
+
+A field-level `lookup_separator` overrides the Meta value, so the
+final precedence is field > Meta > `LOOKUP_SEP`. The result with
+the example above is `price_gte` instead of `price__gte`.
+
+## filter_by and db_field
+
+Two parameters control how a field maps to the ORM.
+
+- `filter_by` is the lookup expression applied to the queryset. It
+  can be a Django ORM string (`"name__icontains"`,
+  `"category__id"`), a callable that returns a `Q` object, or a
+  callable that returns a filter dict.
+- `db_field` is the column name used when generating lookup variants.
+  It defaults to the field name on the FilterSet.
+
+`filter_by` takes precedence over `db_field`. By default, the field
+name is used as `db_field`, which produces
+`queryset.filter(field_name=value)`.
+
+```python
+class ProductFilter(FilterSet):
+    # runs queryset.filter(price=<value>)
+    price = IntegerField()
+```
+
+```python
+class ProductFilter(FilterSet):
+    # query-string param is "price_value", ORM column is "price"
+    # runs queryset.filter(price=<value>)
+    price_value = IntegerField(db_field="price")
+```
+
+```python
+class ProductFilter(FilterSet):
+    # runs queryset.filter(price__gte=<value>)
+    price_value = IntegerField(filter_by="price__gte")
+```
+
+When combining `lookups` with `method` or a custom `filter_by`, set
+`db_field` so the lookup variants have a base column to attach to.
+
+```python
+class ProductFilterSet(FilterSet):
+    # bad: lookups + filter_by without db_field raises an assertion error
+    # because there is no base column for the variant names to attach to.
+    price = IntegerField(filter_by="price__exact", lookups=["gte", "lte"])
+
+    # good: db_field gives the variants a column to use.
+    # ?price=1 runs queryset.filter(price__exact=1)
+    # ?price__gte=1 runs queryset.filter(price__gte=1)
+    price = IntegerField(
+        filter_by="price__exact",
+        db_field="price",
+        lookups=["gte", "lte"],
+    )
+```
+
+The same applies when combining `lookups` with `method`:
+
+```python
+class ProductFilterSet(FilterSet):
+    price = IntegerField(
+        method="custom_method",
+        db_field="price",
+        lookups=["gte", "lte"],
+    )
+
+    def custom_method(self, queryset, value):
+        return Q(price=value)
+```
+
+## Field overview
 
 ```python
 from restflow.filters import (
-    # Basic types
     StringField, IntegerField, FloatField, BooleanField, DecimalField,
-
-    # Date/Time
-    DateField, DateTimeField, TimeField,
-
-    # Choices
+    DateField, DateTimeField, TimeField, DurationField,
     ChoiceField, MultipleChoiceField,
-
-    # Lists
-    ListField,
-
-    # Special
-    OrderField,
+    ListField, OrderField, RelatedField,
+    EmailField, IPAddressField, Field,
 )
 ```
 
-### Type Annotations
-
-Use Python type annotations for automatic field generation:
+### Type annotations
 
 ```python
 from typing import List, Literal
 from datetime import datetime
 
+
 class ProductFilterSet(FilterSet):
-    # Basic types
-    name: str                                    # StringField
-    price: int                                   # IntegerField
-    rating: float                                # FloatField
-    in_stock: bool                               # BooleanField
-
-    # Date/Time
-    created_at: datetime                         # DateTimeField
-
-    # Choices with Literal
-    status: Literal["draft", "published"]        # ChoiceField
-
-    # Lists
-    tags: List[int]                              # ListField with IntegerField child
-    categories: List[str]                        # ListField with StringField child
+    name: str
+    price: int
+    rating: float
+    in_stock: bool
+    created_at: datetime
+    status: Literal["draft", "published"]
+    tags: List[int]
+    categories: List[str]
 ```
 
 ### Lookups
 
-Fields can have lookup variations:
-
 ```python
 class ProductFilterSet(FilterSet):
-    # Single lookup
     name = StringField(lookups=["icontains"])
-    # Creates: name__icontains
-
-    # Multiple lookups
     price = IntegerField(lookups=["gte", "lte"])
-    # Creates: price__gte, price__lte
-
-    # Lookup categories
-    title = StringField(lookups=["text"])
-    # Creates: title__icontains, title__contains, title__startswith,
-    #          title__endswith, title__iexact
-
-    # Comparison category
-    views = IntegerField(lookups=["comparison"])
-    # Creates: views__gt, views__gte, views__lt, views__lte
+    title = StringField(lookups=["text"])      # category
+    views = IntegerField(lookups=["comparison"])  # category
 ```
 
-**Available Categories:**
+Available categories:
 
-| Category Name | Lookups |
+| Category | Lookups |
 | --- | --- |
-|`basic` | `["exact", "in", "isnull"]` |
-|`text` | `["icontains", "contains", "startswith", "endswith", "iexact"]` |
-|`comparison` | `["gt", "gte", "lt", "lte"]` |
-|`date` | `["date", "year", "month", "day", "week", "week_day", "quarter"]` |
-|`time` | `["time", "hour", "minute", "second"]` |
-|`postgres` | `["search", "trigram_similar", "unaccent"]` |
-|`pg_array` | `["contains", "overlaps", "contained_by"]` |
+| `basic` | `exact`, `in`, `isnull` |
+| `text` | `icontains`, `contains`, `startswith`, `endswith`, `iexact` |
+| `comparison` | `gt`, `gte`, `lt`, `lte` |
+| `date` | `date`, `year`, `month`, `day`, `week`, `week_day`, `quarter` |
+| `time` | `time`, `hour`, `minute`, `second` |
+| `postgres` | `search`, `trigram_similar`, `unaccent` |
+| `pg_array` | `contains`, `overlaps`, `contained_by` |
 
+### Type annotation mapping
 
-
-When using type annotations, drf-restflow maps Python types to appropriate fields:
-
-| Python Type | Field Type | Lookup Categories |
-|-------------|------------|-------------------|
+| Python type | Field type | Lookup categories |
+| --- | --- | --- |
 | `str` | `StringField` | basic, text |
 | `int` | `IntegerField` | basic, comparison |
 | `float` | `FloatField` | basic, comparison |
@@ -431,87 +510,47 @@ When using type annotations, drf-restflow maps Python types to appropriate field
 | `decimal.Decimal` | `DecimalField` | basic, comparison |
 | `List[T]` | `ListField` | basic |
 | `Literal[...]` | `ChoiceField` | basic |
-| `Optional[T]` | Corresponding field | Same as T |
-
-
-> Note: The priority of `filter_by` is higher than `db_field`, if both mentioned then `filter_by` will take precedence,
-by default the field name is used as `db_field` which will perform the query
-
-```python
-class ProductFilter(FilterSet):
-    # While filtering queryset it will perform queryset.filter(price=<value>)
-    price = IntegerField()  
-```
-
-```python
-class ProductFilter(FilterSet):
-    # While filtering queryset it will perform queryset.filter(price=<value>)
-    price_value = IntegerField(db_field="price")  
-```
-
-
-```python
-class ProductFilter(FilterSet):
-    # While filtering queryset it will perform queryset.filter(price__gte=<value>)
-    price_value = IntegerField(filter_by="price__gte")  
-```
-
-
-### Lookups with method/filter_by
-Cannot generate lookup variants if `db_field` is unset and `lookups` 
-alongside `method` or `filter_by` is used. Always Set `db_field` 
-
-
-```python
-class ProductFilterSet(FilterSet):
-    # ❌ WRONG - Will raise assertion error as method is used and db_field is unset
-    price = IntegerField(method="custom_method", lookups=["gte", "lte"])
-    # ❌ WRONG - Will raise assertion error as filter_by is used and db_field is unset
-    price = IntegerField(filter_by="price__exact", lookups=["gte", "lte"])
-    # ✅ CORRECT 
-    # This will generate the lookup variants
-    # And if query param contains ?price=1, it will perform queryset.filter(price__exact=1)
-    # And for variants eg:
-    # ?price__gte=1 will perform queryset.filter(price__gte=1)
-    price = IntegerField(filter_by="price__exact", db_field="price", lookups=["gte", "lte"])
-    
-
-```
-
-
-### Custom Lookup Expressions
-
-```python
-class ProductFilterSet(FilterSet):
-    # Filter by related field
-    category_name = StringField(filter_by="category__name__icontains")
-
-    # Nested relationships
-    department = StringField(filter_by="category__department__name")
-
-    # Multiple levels
-    region = StringField(filter_by="store__address__city__region__name")
-```
+| `Optional[T]` / `T \| None` | corresponding field for `T` | same as `T` |
 
 ### Negation
 
-All filters automatically support negation with `!`:
+Every filter automatically supports negation with the `!` suffix.
 
-```python
-# No configuration needed - automatic!
-
-# ?status!=draft              # NOT draft
-# ?price__gte!=1000          # NOT >= 1000
-# ?name__icontains!=test     # NOT containing test
+```bash
+?status!=draft
+?price__gte!=1000
+?name__icontains!=test
 ```
 
 ## Using FilterSets
 
-### In Views
+### Through RestflowFilterBackend
+
+The DRF integration handles the wiring automatically:
+
+```python
+from rest_framework import generics
+from restflow.filters import RestflowFilterBackend
+
+
+class ProductListView(generics.ListAPIView):
+    queryset = Product.objects.all()
+    serializer_class = ProductSerializer
+    filter_backends = [RestflowFilterBackend]
+    filterset_class = ProductFilterSet
+```
+
+See the [DRF Integration guide](integration.md) for the full
+backend behaviour.
+
+### Manual filter_queryset
+
+For lower-level control, or use cases outside DRF generic views:
 
 ```python
 from rest_framework import generics
 from rest_framework.exceptions import ValidationError
+
 
 class ProductListView(generics.ListAPIView):
     serializer_class = ProductSerializer
@@ -526,82 +565,44 @@ class ProductListView(generics.ListAPIView):
         return filterset.filter_queryset(queryset)
 ```
 
-### filter_queryset() Method
-
-The `filter_queryset()` method applies all filters to a queryset:
-
-```python
-filterset = ProductFilterSet(request=request)
-filtered_qs = filterset.filter_queryset(Product.objects.all())
-```
-
-**With ignore parameter:**
+### filter_queryset() with ignore
 
 Skip specific filters when applying:
 
 ```python
-# Ignore certain filters
 filtered_qs = filterset.filter_queryset(
     Product.objects.all(),
-    ignore=['search', 'trending']
+    ignore=["search", "trending"],
 )
-
-# Useful when you want to apply some filters manually
-# or conditionally skip certain filters
 ```
 
-**Example use case:**
+### From a dictionary
 
 ```python
-class ProductListView(generics.ListAPIView):
-    def get_queryset(self):
-        queryset = Product.objects.all()
-        filterset = ProductFilterSet(request=self.request)
-
-        # Apply all filters except 'search'
-        # We'll handle search separately
-        queryset = filterset.filter_queryset(queryset, ignore=['search'])
-
-        # Custom search logic with highlighting
-        if 'search' in filterset.data:
-            search_term = filterset.data['search']
-            queryset = self.apply_custom_search(queryset, search_term)
-
-        return queryset
-```
-
-### From Dictionary
-
-```python
-data = {'name__icontains': 'laptop', 'price__gte': 100}
+data = {"name__icontains": "laptop", "price__gte": 100}
 filterset = ProductFilterSet(data=data)
 ```
 
-### Accessing Data
+### Accessing data
 
 ```python
 filterset = ProductFilterSet(request=request)
 
-# Check if valid
 if filterset.is_valid():
-    # Get validated data
     data = filterset.validated_data
-    # {'name': 'laptop', 'price__gte': 100}
+    # {"name": "laptop", "price__gte": 100}
 else:
-    # Get errors
     errors = filterset.errors
-    # {'price': ['A valid integer is required.']}
+    # {"price": ["A valid integer is required."]}
 
-# Get as dictionary
-# Automatically does `.is_valid()`
+# model_dump() runs is_valid() and returns the validated data, or
+# raises ValidationError on failure.
 data = filterset.model_dump()
 ```
 
 ## Ordering
 
-Add ordering/sorting to your FilterSet.
-
-### Using Meta.order_fields
+Add ordering through `Meta.order_fields`.
 
 ```python
 class ProductFilterSet(FilterSet):
@@ -609,111 +610,92 @@ class ProductFilterSet(FilterSet):
     price: int
 
     class Meta:
-        # If the value is empty, the queryset will be ordered by price
-        order_param = "sort_by"    # Query param responsible for ordering, by default set to 'order_by'
+        order_param = "sort_by"
         order_fields = [
-            ('name', 'name'),               # Can order by:`?sort_by=name` or `?sort_by=-name`
-            ('price', 'price'),
-            ('created_at', 'created_at'),
-            ('review_count', 'reviews'),   # Annotated field
+            ("name", "name"),
+            ("price", "price"),
+            ("created_at", "created_at"),
+            ("review_count", "reviews"),    # annotated field
         ]
-        
-        default_order_fields = ["price"]  
-        order_field_labels = [("Item Name", "name")]  # For schema generation / viewing
-        override_order_dir = "asc"  
-
-# Usage:
-# ?sort_by=name          # Ascending
-# ?sort_by=-name         # Descending
-# ?sort_by=price         # By price ascending
-# ?sort_by=-created_at   # Newest first
+        default_order_fields = ["price"]
+        order_field_labels = [("name", "Item Name")]
+        override_order_direction = "asc"
 ```
 
-### Overriding order direction.
+```bash
+?sort_by=name
+?sort_by=-price
+?sort_by=name,-created_at
+```
+
+### override_order_direction
+
+`override_order_direction="desc"` reverses the meaning of the `-`
+prefix. With this set, `?order_by=name` orders descending and
+`?order_by=-name` orders ascending.
 
 ```python
-class ProductFilterSet(FilterSet):
-    name: str
-    price: int
-
-    class Meta:
-        order_fields = [
-            ('name', 'name'),               # Can order by:`?sort_by=name` or `?sort_by=-name`
-            ('price', 'price'),
-            ('created_at', 'created_at'),
-            ('review_count', 'reviews'),   # Annotated field
-        ]
-        override_order_dir = "desc"  
-
-# Usage:
-# ?order_by=name          # Descending
-# ?order_by=-name         # Ascending
-# ?order_by=price         # By price descending
-# ?order_by=-created_at   # Oldest first
+class Meta:
+    order_fields = [("name", "name"), ("price", "price")]
+    override_order_direction = "desc"
 ```
 
-### Ordering by Annotated Fields
+### Annotated fields
 
 ```python
 from django.db.models import Count
 
+
 def add_annotations(filterset, queryset):
-    return queryset.annotate(
-        review_count=Count('reviews')
-    )
+    return queryset.annotate(review_count=Count("reviews"))
+
 
 class ProductFilterSet(FilterSet):
     class Meta:
         preprocessors = [add_annotations]
         order_fields = [
-            ('name', 'name'),
-            ('review_count', 'reviews'),  # Order by annotation
+            ("name", "name"),
+            ("review_count", "reviews"),
         ]
-
-# Usage:
-# ?order_by=reviews       # Least reviews first
-# ?order_by=-reviews      # Most reviews first
 ```
 
-### Using OrderField Explicitly
+### Explicit OrderField
 
 ```python
 from restflow.filters import OrderField
 
+
 class ProductFilterSet(FilterSet):
     ordering = OrderField(
-        fields=[
-            ('name', 'name'),
-            ('price', 'price'),
-            ('created_at', 'created_at'),
-        ]
+        fields=[("name", "name"), ("price", "price")],
     )
-
-# Usage same as Meta.order_fields
-# ?ordering=name
-# ?ordering=-price
 ```
 
-### Default Ordering with Postprocessor
+```bash
+?ordering=name
+?ordering=-price
+```
+
+### Default ordering with a postprocessor
 
 ```python
+def apply_default_ordering(filterset, queryset):
+    if not queryset.ordered:
+        return queryset.order_by("-created_at")
+    return queryset
 
-class ProductFilterSet(FilterSet):
-    class Meta:
-        default_order_fields = ["price"]
-        order_fields = [('name', 'name'), ('created_at', 'created_at')]
-        postprocessors = [apply_default_ordering]
 
-# Queries without ?order_by get default ordering by price
+class Meta:
+    default_order_fields = ["price"]
+    order_fields = [("name", "name"), ("created_at", "created_at")]
+    postprocessors = [apply_default_ordering]
 ```
 
 ## Operators
 
-Operators control how multiple filters are combined.
+Operators control how multiple filters combine.
 
-### AND Operator (Default)
-
-All conditions must match:
+### AND (default)
 
 ```python
 class ProductFilterSet(FilterSet):
@@ -721,15 +703,14 @@ class ProductFilterSet(FilterSet):
     category: str
 
     class Meta:
-        operator = "AND"  # Default
+        operator = "AND"
+
 
 # ?name=laptop&category=electronics
-# SQL: WHERE name='laptop' AND category='electronics'
+# SQL: WHERE name = 'laptop' AND category = 'electronics'
 ```
 
-### OR Operator
-
-Any condition can match:
+### OR
 
 ```python
 class ProductFilterSet(FilterSet):
@@ -739,13 +720,12 @@ class ProductFilterSet(FilterSet):
     class Meta:
         operator = "OR"
 
+
 # ?name__icontains=wireless&description__icontains=bluetooth
 # SQL: WHERE name ILIKE '%wireless%' OR description ILIKE '%bluetooth%'
 ```
 
-### XOR Operator
-
-Exactly one condition must match:
+### XOR
 
 ```python
 class ProductFilterSet(FilterSet):
@@ -755,13 +735,15 @@ class ProductFilterSet(FilterSet):
     class Meta:
         operator = "XOR"
 
+
 # ?is_new=true&is_refurbished=true
-# Returns items that are EITHER new OR refurbished (not both)
+# returns rows where exactly one of the conditions matches
 ```
 
-### Operator with Custom Methods
+### Operator with custom methods
 
-**⚠️ CRITICAL CAVEAT:** Operators only work correctly when custom methods return Q objects:
+Operators only apply when custom methods return `Q` objects, not
+querysets.
 
 ```python
 class ProductFilterSet(FilterSet):
@@ -771,31 +753,32 @@ class ProductFilterSet(FilterSet):
     class Meta:
         operator = "OR"
 
-    # ✅ CORRECT - Returns Q object
-    def filter_in_stock(self, filterset, queryset, value):
+    # good: returning a Q object lets the FilterSet operator combine
+    # this with other filters.
+    def filter_in_stock(self, queryset, value):
         if value:
             return Q(inventory__gt=0)
         return Q()
 
-    # ❌ WRONG - Returns QuerySet (operator ignored!)
-    def filter_in_stock_wrong(self, filterset, queryset, value):
+    # bad: returning a queryset bypasses the operator setting.
+    def filter_in_stock_wrong(self, queryset, value):
         if value:
             return queryset.filter(inventory__gt=0)
         return queryset
 ```
 
-See [Custom Method Caveat](#custom-method-caveat) for details.
+See [Custom method caveat](#custom-method-caveat).
 
 ## Preprocessors
 
-Preprocessors transform querysets **before** filters are applied.
+Preprocessors transform the queryset before filters are applied.
 
-### Basic Usage
+### Basic usage
 
 ```python
 def exclude_deleted(filterset, queryset):
-    """Always exclude soft-deleted items"""
     return queryset.filter(deleted_at__isnull=True)
+
 
 class ProductFilterSet(FilterSet):
     name: str
@@ -804,41 +787,46 @@ class ProductFilterSet(FilterSet):
         preprocessors = [exclude_deleted]
 ```
 
-### Multiple Preprocessors
+### Multiple preprocessors
 
-Run in order declared:
+They run in declaration order.
 
 ```python
 def exclude_deleted(filterset, queryset):
     return queryset.filter(deleted_at__isnull=True)
 
+
 def apply_permissions(filterset, queryset):
     if filterset.request and not filterset.request.user.is_staff:
-        return queryset.filter(status='published')
+        return queryset.filter(status="published")
     return queryset
 
+
 def optimize_queries(filterset, queryset):
-    return queryset.select_related('category').prefetch_related('tags')
+    return queryset.select_related("category").prefetch_related("tags")
+
 
 class ProductFilterSet(FilterSet):
     class Meta:
         preprocessors = [
-            exclude_deleted,      # 1. Filter deleted
-            apply_permissions,    # 2. Apply permissions
-            optimize_queries,     # 3. Optimize
+            exclude_deleted,
+            apply_permissions,
+            optimize_queries,
         ]
 ```
 
-### Adding Annotations
+### Adding annotations
 
 ```python
-from django.db.models import Count, Avg
+from django.db.models import Avg, Count
+
 
 def add_review_stats(filterset, queryset):
     return queryset.annotate(
-        review_count=Count('reviews'),
-        avg_rating=Avg('reviews__rating')
+        review_count=Count("reviews"),
+        avg_rating=Avg("reviews__rating"),
     )
+
 
 class ProductFilterSet(FilterSet):
     min_reviews = IntegerField(method="filter_min_reviews")
@@ -847,45 +835,43 @@ class ProductFilterSet(FilterSet):
     class Meta:
         preprocessors = [add_review_stats]
 
-    def filter_min_reviews(self, filterset, queryset, value):
+    def filter_min_reviews(self, queryset, value):
         return Q(review_count__gte=value)
 
-    def filter_min_rating(self, filterset, queryset, value):
+    def filter_min_rating(self, queryset, value):
         return Q(avg_rating__gte=value)
 ```
 
-### Request-Based Filtering
+### Request-based filtering
 
 ```python
 def tenant_isolation(filterset, queryset):
-    """Multi-tenant data isolation"""
     if not filterset.request or not filterset.request.user.is_authenticated:
         return queryset.none()
 
     tenant = filterset.request.user.tenant
     return queryset.filter(tenant=tenant)
 
+
 class ProductFilterSet(FilterSet):
     class Meta:
         preprocessors = [tenant_isolation]
 ```
 
-### Conditional Optimization
+### Conditional optimization
 
 ```python
 def smart_optimization(filterset, queryset):
-    """Only optimize what's needed"""
-    # Always select related ForeignKeys
-    queryset = queryset.select_related('category', 'brand')
+    queryset = queryset.select_related("category", "brand")
 
-    # Conditionally prefetch M2M
-    if 'tags' in filterset.data:
-        queryset = queryset.prefetch_related('tags')
+    if "tags" in filterset.data:
+        queryset = queryset.prefetch_related("tags")
 
-    if 'reviews' in filterset.request.query_params:
-        queryset = queryset.prefetch_related('reviews')
+    if filterset.request and "reviews" in filterset.request.query_params:
+        queryset = queryset.prefetch_related("reviews")
 
     return queryset
+
 
 class ProductFilterSet(FilterSet):
     class Meta:
@@ -894,27 +880,28 @@ class ProductFilterSet(FilterSet):
 
 ## Postprocessors
 
-Postprocessors transform querysets **after** filters are applied.
+Postprocessors transform the queryset after filters are applied.
 
-### Basic Usage
+### Basic usage
 
 ```python
 def apply_default_ordering(filterset, queryset):
     if not queryset.ordered:
-        return queryset.order_by('-created_at')
+        return queryset.order_by("-created_at")
     return queryset
+
 
 class ProductFilterSet(FilterSet):
     class Meta:
         postprocessors = [apply_default_ordering]
 ```
 
-### Ensure Distinct
+### Ensure distinct
 
 ```python
 def ensure_distinct(filterset, queryset):
-    """Remove duplicates from M2M filtering"""
     return queryset.distinct()
+
 
 class ProductFilterSet(FilterSet):
     tags: List[int]
@@ -923,31 +910,35 @@ class ProductFilterSet(FilterSet):
         postprocessors = [ensure_distinct]
 ```
 
-
-### Audit Logging
+### Audit logging
 
 ```python
 import logging
+
 logger = logging.getLogger(__name__)
+
 
 def log_filter_usage(filterset, queryset):
     if filterset.request:
-        user = getattr(filterset.request.user, 'username', 'anonymous')
+        user = getattr(filterset.request.user, "username", "anonymous")
         filters = dict(filterset.data)
-        logger.info(f"User {user} filtered: {filters}")
+        logger.info("User %s filtered: %s", user, filters)
     return queryset
+
 
 class ProductFilterSet(FilterSet):
     class Meta:
         postprocessors = [log_filter_usage]
 ```
 
-### Performance Monitoring
+### Performance monitoring
 
 ```python
 import time
 import logging
+
 logger = logging.getLogger(__name__)
+
 
 def monitor_performance(filterset, queryset):
     start = time.time()
@@ -956,10 +947,11 @@ def monitor_performance(filterset, queryset):
 
     if duration > 1.0:
         logger.warning(
-            f"Slow query: {duration:.2f}s for {count} results. "
-            f"Filters: {dict(filterset.data)}"
+            "Slow query: %.2fs for %s results. Filters: %s",
+            duration, count, dict(filterset.data),
         )
     return queryset
+
 
 class ProductFilterSet(FilterSet):
     class Meta:
@@ -968,137 +960,244 @@ class ProductFilterSet(FilterSet):
 
 ## Validation
 
-### Automatic Validation
-
-FilterSet uses DRF serializers for automatic type validation:
+### Automatic validation
 
 ```python
 class ProductFilterSet(FilterSet):
-    price: int  # Only accepts integers
+    price: int
 
-# ?price=abc → {"price": ["A valid integer is required."]}
+
+# ?price=abc
+# {"price": ["A valid integer is required."]}
 ```
 
-### Field-Level Validation
+### Field-level validation
 
 ```python
 from rest_framework.validators import MinValueValidator
+
 
 class ProductFilterSet(FilterSet):
     price = IntegerField(
         min_value=0,
         max_value=1_000_000,
-        validators=[MinValueValidator(0)]
+        validators=[MinValueValidator(0)],
     )
 
-# ?price=-10 → {"price": ["Ensure this value is greater than or equal to 0."]}
+
+# ?price=-10
+# {"price": ["Ensure this value is greater than or equal to 0."]}
 ```
 
-### FilterSet-Level Validation
+### FilterSet-level validation
 
 ```python
 from rest_framework.exceptions import ValidationError
+
 
 class ProductFilterSet(FilterSet):
     min_price = IntegerField(filter_by="price__gte")
     max_price = IntegerField(filter_by="price__lte")
 
     def validate(self, data):
-        if 'min_price' in data and 'max_price' in data:
-            if data['min_price'] > data['max_price']:
+        if "min_price" in data and "max_price" in data:
+            if data["min_price"] > data["max_price"]:
                 raise ValidationError({
-                    'max_price': 'Must be greater than min_price'
+                    "max_price": "Must be greater than min_price",
                 })
         return data
 
-# ?min_price=1000&max_price=500 → 400 Bad Request
+
+# ?min_price=1000&max_price=500 -> 400 Bad Request
 ```
 
-### Custom Validators
+### Custom validators
 
 ```python
 from rest_framework.exceptions import ValidationError
+
 
 def validate_even(value):
     if value % 2 != 0:
         raise ValidationError("Must be an even number")
 
+
 class ProductFilterSet(FilterSet):
     batch_size = IntegerField(validators=[validate_even])
 ```
 
-## PostgreSQL Features
+## Async support
 
-drf-restflow supports PostgreSQL-specific features. See [Fields](fields.md) for complete PostgreSQL field details.
+`FilterSet` exposes a parallel async entry point, `afilter_queryset`. Use it
+from async views and Channels consumers, or anywhere `method=`,
+preprocessor, or postprocessor callables are `async def`.
 
-### Full-Text Search
+The sync `filter_queryset` and async `afilter_queryset` build the same Q
+objects and apply them with `queryset.filter(...)`. The queryset itself
+remains lazy in both cases. An async terminator like `aiter()`, `acount()`,
+or `aget()` is still required to actually hit the database.
+
+### Basic async use
 
 ```python
-from django.contrib.postgres.search import SearchVector, SearchQuery, SearchRank
+from restflow.filters import FilterSet, IntegerField
+
+
+class ProductFilterSet(FilterSet):
+    price = IntegerField(lookups=["gte", "lte"])
+
+
+async def list_products(request):
+    filterset = ProductFilterSet(request=request)
+    queryset = await filterset.afilter_queryset(Product.objects.all())
+    return [p async for p in queryset.aiter()]
+```
+
+### Async user callables
+
+`method=` callables, preprocessors, and postprocessors may be `async def`.
+The signature is the same as the sync version.
+
+```python
+from django.db.models import Q
+
+
+async def attach_inventory(filterset, queryset):
+    return await sync_to_async(some_blocking_lookup)(queryset)
+
+
+class ProductFilterSet(FilterSet):
+    in_stock = BooleanField(method="filter_in_stock")
+
+    class Meta:
+        preprocessors = [attach_inventory]
+
+    async def filter_in_stock(self, queryset, value):
+        if value:
+            return Q(inventory__gt=0)
+        return Q()
+```
+
+### Mixing sync and async
+
+A single FilterSet can mix sync and async callables freely. Async
+`afilter_queryset` runs sync callables directly and awaits async ones.
+Order is preserved; processors still chain (each consumes the prior
+queryset), so they run sequentially.
+
+```python
+def fast_sync_filter(filterset, queryset):
+    return queryset.filter(deleted_at__isnull=True)
+
+
+async def attach_external_data(filterset, queryset):
+    return await sync_to_async(slow_lookup)(queryset)
+
+
+class Meta:
+    preprocessors = [fast_sync_filter, attach_external_data]
+```
+
+### Sync entry point and async callables
+
+The sync `filter_queryset` raises `TypeError` if any user callable returns
+a coroutine. The error message points at `afilter_queryset`. This is
+deliberate: silently bridging sync to async via `async_to_sync` from inside
+an already-running event loop deadlocks, so the framework refuses to guess.
+
+```python
+class ProductFilterSet(FilterSet):
+    in_stock = BooleanField(method="filter_in_stock")
+
+    async def filter_in_stock(self, queryset, value):
+        return Q(inventory__gt=0)
+
+
+# This raises TypeError pointing at afilter_queryset:
+# ProductFilterSet(data={"in_stock": "true"}).filter_queryset(qs)
+```
+
+### Validation stays sync
+
+`is_valid()` and `model_dump()` are pure-Python validation; no DB. They
+are safe to call from an async context. Custom DRF validators must remain
+sync; async validators are not supported.
+
+## PostgreSQL features
+
+Restflow supports PostgreSQL-specific features. See the
+[Fields guide](fields.md) for the field-level details.
+
+### Full-text search
+
+```python
+from django.contrib.postgres.search import (
+    SearchVector, SearchQuery, SearchRank,
+)
+
 
 class ProductFilterSet(FilterSet):
     search = StringField(method="filter_fulltext_search")
 
-    def filter_fulltext_search(self, filterset, queryset, value):
-        vector = SearchVector('name', weight='A') + SearchVector('description', weight='B')
+    def filter_fulltext_search(self, queryset, value):
+        vector = (
+            SearchVector("name", weight="A")
+            + SearchVector("description", weight="B")
+        )
         query = SearchQuery(value)
         return queryset.annotate(
             search=vector,
-            rank=SearchRank(vector, query)
-        ).filter(search=query).order_by('-rank')
-
-# ?search=wireless headphones
-# Uses PostgreSQL full-text search with ranking
+            rank=SearchRank(vector, query),
+        ).filter(search=query).order_by("-rank")
 ```
 
-### Array Fields
+### Array fields
 
 ```python
 from django.contrib.postgres.fields import ArrayField
 
+
 class Product(models.Model):
     tags = ArrayField(models.CharField(max_length=50))
+
 
 class ProductFilterSet(FilterSet):
     tags = ListField(
         child=StringField(),
-        lookups=["pg_array"]  # PostgreSQL array lookups
+        lookups=["pg_array"],
     )
 
-# ?tags__contains=wireless       # Array contains value
-# ?tags__overlap=wireless,bluetooth  # Array overlaps with values
-# ?tags__contained_by=a,b,c     # Array contained by values
+
+# ?tags__contains=wireless
+# ?tags__overlap=wireless,bluetooth
+# ?tags__contained_by=a,b,c
 ```
 
-### JSON Fields
+### JSON fields
 
 ```python
-from django.db import models
-
 class Product(models.Model):
     metadata = models.JSONField()
 
+
 class ProductFilterSet(FilterSet):
-    # Filter by JSON key
     brand = StringField(filter_by="metadata__brand")
     color = StringField(filter_by="metadata__specs__color")
-
-# ?brand=Apple
-# ?color=red
 ```
 
-### Using SearchVector in Preprocessor
+### Search vector in a preprocessor
 
 ```python
-from django.contrib.postgres.search import SearchVector
+from django.contrib.postgres.search import SearchVector, SearchQuery
+
 
 def add_search_vector(filterset, queryset):
-    """Add search vector for better full-text search"""
-    if 'search' in filterset.data:
+    if "search" in filterset.data:
         return queryset.annotate(
-            search_vector=SearchVector('name', 'description', 'tags')
+            search_vector=SearchVector("name", "description", "tags"),
         )
     return queryset
+
 
 class ProductFilterSet(FilterSet):
     search = StringField(method="filter_search")
@@ -1106,16 +1205,16 @@ class ProductFilterSet(FilterSet):
     class Meta:
         preprocessors = [add_search_vector]
 
-    def filter_search(self, filterset, queryset, value):
-        from django.contrib.postgres.search import SearchQuery
+    def filter_search(self, queryset, value):
         return queryset.filter(search_vector=SearchQuery(value))
 ```
 
-## Important Caveats
+## Important caveats
 
-### Custom Method Caveat
+### Custom method caveat
 
-**⚠️ CRITICAL:** When custom methods return QuerySet instead of Q objects, the FilterSet operator is **NOT applied**.
+When custom methods return `QuerySet` instead of `Q` objects, the
+FilterSet's `operator` setting is not applied to that filter.
 
 ```python
 class ProductFilterSet(FilterSet):
@@ -1123,64 +1222,60 @@ class ProductFilterSet(FilterSet):
     category: str
 
     class Meta:
-        operator = "OR"  # ⚠️ Won't apply to QuerySet returns!
+        operator = "OR"
 
-    # ❌ WRONG - Returns QuerySet
-    def filter_in_stock(self, filterset, queryset, value):
+    # bad: queryset return bypasses the operator
+    def filter_in_stock(self, queryset, value):
         if value:
             return queryset.filter(inventory__gt=0)
         return queryset
 
-# Query: ?in_stock=true&category=electronics
-# Expected (OR): in_stock=true OR category=electronics
-# Actual: in_stock=true AND category=electronics  (Operator ignored!)
+
+# ?in_stock=true&category=electronics
+# expected: in_stock = true OR category = electronics
+# actual:   in_stock = true AND category = electronics
 ```
 
-**✅ SOLUTION:** Always return Q objects:
+The fix is to return `Q` objects:
 
 ```python
-def filter_in_stock(self, filterset, queryset, value):
+def filter_in_stock(self, queryset, value):
     if value:
         return Q(inventory__gt=0)
-    return Q()  # Empty Q matches everything
+    return Q()   # empty Q matches everything
 ```
 
-**Why Q objects?**
-- Work correctly with ALL operators (AND, OR, XOR)
-- Properly combined with other filters
-- More predictable behavior
-- Better for complex queries
+`Q` objects compose under every operator (`AND`, `OR`, `XOR`).
 
-### Annotation Performance
+### Annotation performance
 
-❌ **Don't annotate in each filter method:**
+Annotate once in a preprocessor instead of repeating the annotation
+inside each custom method.
 
 ```python
-def filter_min_reviews(self, filterset, queryset, value):
-    # Bad - annotation repeated for each call
-    return queryset.annotate(count=Count('reviews')).filter(count__gte=value)
-```
+# bad: annotation repeated for each call
+def filter_min_reviews(self, queryset, value):
+    return queryset.annotate(count=Count("reviews")).filter(count__gte=value)
 
-✅ **Annotate once in preprocessor:**
-
-```python
+# good: annotate once, filter cheaply
 def add_annotations(filterset, queryset):
-    return queryset.annotate(review_count=Count('reviews'))
+    return queryset.annotate(review_count=Count("reviews"))
+
 
 class Meta:
     preprocessors = [add_annotations]
 
-def filter_min_reviews(self, filterset, queryset, value):
+
+def filter_min_reviews(self, queryset, value):
     return Q(review_count__gte=value)
 ```
 
-### Request Access
+### Request access
 
-**Always check if request exists:**
+Always check that `filterset.request` exists before reading from it.
 
 ```python
 def user_filter(filterset, queryset):
-    # ✅ Check request exists
     if not filterset.request:
         return queryset
 
@@ -1190,90 +1285,23 @@ def user_filter(filterset, queryset):
     return queryset
 ```
 
-### Processor Return Values
+### Processor return values
 
-**Always return queryset:**
+Always return the queryset from a processor.
 
 ```python
-# ✅ Good
+# good
 def my_processor(filterset, queryset):
     return queryset.filter(active=True)
 
-# ❌ Bad - returns None
+# bad: returns None
 def my_processor(filterset, queryset):
-    queryset.filter(active=True)  # Missing return!
+    queryset.filter(active=True)
 ```
 
-## Best Practices
+## Next steps
 
-### Always Return Q Objects from Custom Methods
-
-```python
-# ✅ Always prefer Q objects
-def filter_method(self, filterset, queryset, value):
-    return Q(field=value)
-
-# ❌ Avoid QuerySet returns (unless using AND operator, or you really need to)
-def filter_method(self, filterset, queryset, value):
-    return queryset.filter(field=value)
-```
-
-### Use extra_kwargs for Simple Configuration
-
-```python
-# ✅ Clean and maintainable
-class Meta:
-    model = Product
-    fields = ['name', 'price']
-    extra_kwargs = {
-        'name': {'lookups': ['icontains']},
-        'price': {'min_value': 0}
-    }
-
-# ❌ More verbose
-name = StringField(lookups=['icontains'])
-price = IntegerField(min_value=0)
-```
-
-### Keep Processors Simple
-
-```python
-# ✅ Single responsibility principle
-def exclude_deleted(filterset, queryset):
-    return queryset.filter(deleted_at__isnull=True)
-
-# ❌ Too many responsibilities
-def do_everything(filterset, queryset):
-    queryset = queryset.filter(deleted_at__isnull=True)
-    queryset = queryset.select_related('category')
-    queryset = queryset.annotate(count=Count('items'))
-    return queryset
-```
-
-### Processor Order Matters
-
-```python
-class Meta:
-    preprocessors = [
-        exclude_deleted,      # 1. Filter first
-        apply_permissions,    # 2. Then permissions
-        add_annotations,      # 3. Add annotations
-        optimize_queries,     # 4. Finally optimize
-    ]
-```
-
-
-### Use ignore Parameter Wisely
-
-```python
-# Useful for custom handling of specific filters
-filtered_qs = filterset.filter_queryset(
-    queryset,
-    ignore=['search']  # Handle search separately with highlighting
-)
-```
-
-## Next Steps
-
-- **[Fields](fields.md)** - Complete guide to all field types, lookups, validation, and PostgreSQL features
-- **[Filtering Tutorial](../../tutorial/filtering.md)** - Step-by-step tutorial with practical examples
+- [Fields](fields.md): every field type, lookup, validation, and
+  PostgreSQL feature.
+- [DRF Integration](integration.md): plug the FilterSet into DRF's
+  filter pipeline.
