@@ -153,6 +153,7 @@ markers = [
     "redis: marks tests as requiring Redis on localhost:6379 (deselect with '-m \"not redis\"')",
     "celery: marks tests as requiring celery to be installed (deselect with '-m \"not celery\"')",
 ]
+testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]

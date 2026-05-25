@@ -2,6 +2,7 @@ import asyncio
 import json
 from unittest.mock import MagicMock
 
+import pytest
 from django.test import RequestFactory
 from rest_framework import serializers as drf_serializers
 
@@ -578,6 +579,42 @@ def test_async_update_resets_prefetched_objects_cache():
     )
     assert response.status_code == 200
     assert item._prefetched_objects_cache == {}
+
+
+@pytest.mark.django_db
+def test_sync_update_resets_prefetched_objects_cache():
+    from restflow.views import APIView
+    from restflow.views.mixins import UpdateModelMixin
+    from tests.models import SampleModel
+
+    class _SampleSerializer(drf_serializers.ModelSerializer):
+        class Meta:
+            model = SampleModel
+            fields = ["id", "integer_field"]
+
+    instance = SampleModel.objects.create(integer_field=1)
+    instance._prefetched_objects_cache = {"some": "thing"}
+
+    class View(UpdateModelMixin, APIView):
+        serializer_class = _SampleSerializer
+        permission_classes = []
+
+        def get_object(self):
+            obj = SampleModel.objects.get(pk=instance.pk)
+            obj._prefetched_objects_cache = {"some": "thing"}
+            return obj
+
+        def put(self, request):
+            return self.update(request)
+
+    factory = RequestFactory()
+    request = factory.put(
+        "/",
+        data=json.dumps({"integer_field": 2}),
+        content_type="application/json",
+    )
+    response = View.as_view()(request)
+    assert response.status_code == 200
 
 
 class _AdeleteItem:

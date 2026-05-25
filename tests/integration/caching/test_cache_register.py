@@ -1314,3 +1314,46 @@ class TestImportCacheModules:
             mock_importlib.import_module.assert_called_once_with(
                 "fake_single_module_app"
             )
+
+    def test_optional_submodule_missing_dependency_is_silently_skipped(
+        self, caplog
+    ):
+        import importlib
+        import logging
+        from unittest.mock import MagicMock
+
+        from restflow.caching.registry import CacheRegistry
+
+        fake_app = MagicMock()
+        fake_app.name = "optional_dep_app"
+        fake_pkg = MagicMock()
+        fake_pkg.__path__ = ["/nonexistent"]
+        fake_pkg.__file__ = "/nonexistent/__init__.py"
+
+        real_import = importlib.import_module
+
+        def selective_import(name, *args, **kwargs):
+            if name == "optional_dep_app":
+                return fake_pkg
+            if name == "optional_dep_app.adapter":
+                raise ImportError("missing optional dependency")
+            return real_import(name, *args, **kwargs)
+
+        def fake_walk_packages(path, prefix):
+            yield (None, f"{prefix}adapter", False)
+
+        with patch(
+            "restflow.caching.registry.apps.get_app_configs",
+            return_value=[fake_app],
+        ), patch(
+            "restflow.caching.registry.importlib.import_module",
+            side_effect=selective_import,
+        ), patch(
+            "restflow.caching.registry.pkgutil.walk_packages",
+            side_effect=fake_walk_packages,
+        ), caplog.at_level(logging.WARNING):
+            CacheRegistry._import_cache_modules()
+
+        assert not any(
+            "failed to import" in record.message for record in caplog.records
+        )

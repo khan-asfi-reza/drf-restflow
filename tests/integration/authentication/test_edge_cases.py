@@ -27,10 +27,15 @@ from restflow.authentication.jwt import (
     encode_token,
     get_jwt_settings,
     get_password_hash,
+    get_user_authentication_rule,
     resolve_token_blacklist_backend,
     validate_algorithm,
     validate_signing_key_shape,
 )
+
+
+def _user_rule_for_tests(user):
+    return user is not None and user.is_active
 
 
 def run_coro(coro):
@@ -104,6 +109,33 @@ def test_resolve_blacklist_backend_class_instance_is_returned_as_is():
 def test_resolve_blacklist_backend_class_constructed_when_class_passed():
     backend = resolve_token_blacklist_backend(ModelBlacklistBackend)
     assert isinstance(backend, ModelBlacklistBackend)
+
+
+def test_get_user_authentication_rule_resolves_dotted_path():
+    with override_settings(
+        RESTFLOW_SETTINGS={
+            "JWT": {
+                "SIGNING_KEY": "test-signing-key-test-signing-key-32",
+                "USER_AUTHENTICATION_RULE": (
+                    "tests.integration.authentication.test_edge_cases"
+                    "._user_rule_for_tests"
+                ),
+            },
+        }
+    ):
+        assert get_user_authentication_rule() is _user_rule_for_tests
+
+
+def test_get_user_authentication_rule_returns_callable_unchanged():
+    with override_settings(
+        RESTFLOW_SETTINGS={
+            "JWT": {
+                "SIGNING_KEY": "test-signing-key-test-signing-key-32",
+                "USER_AUTHENTICATION_RULE": _user_rule_for_tests,
+            },
+        }
+    ):
+        assert get_user_authentication_rule() is _user_rule_for_tests
 
 
 def test_resolve_blacklist_backend_dotted_path_imported():
