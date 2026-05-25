@@ -2,9 +2,13 @@ import asyncio
 from datetime import timedelta
 
 import pytest
+from django.contrib.auth import get_user_model
 from django.core.exceptions import ImproperlyConfigured
-from django.test import override_settings
+from django.test import RequestFactory, override_settings
+from rest_framework.exceptions import AuthenticationFailed
+from rest_framework.request import Request
 
+from restflow.authentication import JWTAuthentication
 from restflow.authentication.jwt import (
     AccessToken,
     CacheBlacklistBackend,
@@ -112,3 +116,35 @@ def test_refresh_token_access_token_uses_user_claim():
         access = refresh.access_token
         assert access.token_type == "access"
         assert access.payload["user_id"] == 7
+
+
+@pytest.mark.django_db(transaction=True)
+def test_refresh_rotate_carries_revoke_claim_in_minted_access():
+    User = get_user_model()
+    user = User.objects.create_user(
+        username="rev-rotate", password="orig", is_active=True
+    )
+    with get_jwt_settings(CHECK_REVOKE_TOKEN=True):
+        refresh = RefreshToken.for_user(user)
+        assert "hash_password" in refresh.payload
+        access = refresh.access_token
+        assert "hash_password" in access.payload
+
+
+@pytest.mark.django_db(transaction=True)
+def test_aauthenticate_rejects_token_after_password_change():
+    User = get_user_model()
+    user = User.objects.create_user(
+        username="rev-pwd", password="orig", is_active=True
+    )
+    with get_jwt_settings(CHECK_REVOKE_TOKEN=True):
+        token = AccessToken.for_user(user)
+        user.set_password("changed")
+        user.save()
+
+        factory = RequestFactory()
+        request = Request(
+            factory.get("/", HTTP_AUTHORIZATION=f"Bearer {token}")
+        )
+        with pytest.raises(AuthenticationFailed, match="password"):
+            _run(JWTAuthentication().aauthenticate(request))

@@ -6,6 +6,7 @@ from functools import partial, wraps
 from typing import Any, Generic, ParamSpec, TypeVar
 
 from django.core.cache import cache
+from django.template.response import SimpleTemplateResponse
 from django.utils import timezone
 
 from restflow.caching.constants import (
@@ -145,7 +146,7 @@ class CachedWrapper(Generic[P, T]):
             return result, metadata
         return data, None
 
-    def _build_cache_payload(self, value, timeout):
+    def _build_cache_metadata(self, timeout):
         reset_at = None
         with suppress(Exception):
             reset_at = (
@@ -155,22 +156,35 @@ class CachedWrapper(Generic[P, T]):
                 if timeout
                 else None
             )
-        metadata = {
+        return {
             METADATA_CACHED_AT_KEY: timezone.now().isoformat(),
             METADATA_RESET_AT_KEY: reset_at,
+            METADATA_CACHE_STATUS: CacheStatus.MISS
         }
-        payload = {
+
+    def _build_cache_payload(self, value, metadata,):
+        return {
             CACHED_DATA_VALUE_KEY: value,
             CACHED_DATA_METADATA_KEY: metadata,
         }
-        return payload, metadata
+
 
     def cache_set_with_timestamp(
         self, key, value, timeout: int | None = None, version=1
     ):
         """Write value to the cache under key with cached-at and reset-at timestamps. Returns (value, metadata)."""
-        payload, metadata = self._build_cache_payload(value, timeout)
-        cache.set(key, payload, timeout=timeout, version=version)
+        metadata = self._build_cache_metadata(timeout=timeout)
+        def _cache_result(_value):
+            payload = self._build_cache_payload(_value, metadata=metadata,)
+            cache.set(key, payload, timeout=timeout, version=version)
+            return _value
+
+        if isinstance(value, SimpleTemplateResponse) and not value._is_rendered:
+            value.add_post_render_callback(_cache_result)
+
+        else:
+            _cache_result(value)
+
         metadata[METADATA_CACHE_STATUS] = CacheStatus.MISS
         return value, metadata
 
@@ -178,9 +192,23 @@ class CachedWrapper(Generic[P, T]):
         self, key, value, timeout: int | None = None, version=1
     ):
         """Async variant of cache_set_with_timestamp using cache.aset."""
-        payload, metadata = self._build_cache_payload(value, timeout)
-        await cache.aset(key, payload, timeout=timeout, version=version)
-        metadata[METADATA_CACHE_STATUS] = CacheStatus.MISS
+        metadata = self._build_cache_metadata(timeout=timeout)
+
+        if (
+            isinstance(value, SimpleTemplateResponse)
+            and not getattr(value, "_is_rendered", True)
+        ):
+            def _cache_result(_value):
+                payload = self._build_cache_payload(_value, metadata=metadata)
+                cache.set(key, payload, timeout=timeout, version=version)
+                return _value
+
+            value.add_post_render_callback(_cache_result)
+
+        else:
+            payload = self._build_cache_payload(value, metadata=metadata)
+            await cache.aset(key, payload, timeout=timeout, version=version)
+
         return value, metadata
 
     def __call__(self, *args: P.args, **kwargs: P.kwargs):

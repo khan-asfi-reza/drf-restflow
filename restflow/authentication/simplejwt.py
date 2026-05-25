@@ -61,13 +61,14 @@ class SimpleJWTAuthentication(BaseAuthentication, _SimpleJWTAuthentication):
             msg = _("User not found.")
             raise exceptions.AuthenticationFailed(msg, code="user_not_found") from exc
 
-        if _simplejwt_settings.CHECK_USER_IS_ACTIVE and not user.is_active:
+        if getattr(_simplejwt_settings, "CHECK_USER_IS_ACTIVE", True) and not user.is_active:
             raise exceptions.AuthenticationFailed(
                 _("User is inactive."), code="user_inactive"
             )
 
-        if _simplejwt_settings.CHECK_REVOKE_TOKEN and validated_token.get(
-            _simplejwt_settings.REVOKE_TOKEN_CLAIM
+        revoke_token_claim = getattr(_simplejwt_settings, "REVOKE_TOKEN_CLAIM", None)
+        if getattr(_simplejwt_settings, "CHECK_REVOKE_TOKEN", False) and validated_token.get(
+            revoke_token_claim
         ) != get_md5_hash_password(user.password):
             raise exceptions.AuthenticationFailed(
                 _("The user's password has been changed."), code="password_changed"

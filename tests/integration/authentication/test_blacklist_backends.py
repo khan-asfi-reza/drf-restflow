@@ -42,19 +42,19 @@ def _jwt_settings():
         yield
 
 
-def testresolve_token_blacklist_backend_accepts_string():
+def test_resolve_token_blacklist_backend_accepts_string():
     backend = resolve_token_blacklist_backend(
         "restflow.authentication.jwt.CacheBlacklistBackend"
     )
     assert isinstance(backend, CacheBlacklistBackend)
 
 
-def testresolve_token_blacklist_backend_accepts_class():
+def test_resolve_token_blacklist_backend_accepts_class():
     backend = resolve_token_blacklist_backend(CacheBlacklistBackend)
     assert isinstance(backend, CacheBlacklistBackend)
 
 
-def testresolve_token_blacklist_backend_accepts_instance():
+def test_resolve_token_blacklist_backend_accepts_instance():
     instance = CacheBlacklistBackend()
     assert resolve_token_blacklist_backend(instance) is instance
 
@@ -204,3 +204,77 @@ def test_blacklist_backend_subclass_protocol():
     ):
         _run(ATokenBlacklist.add("custom-1", expires_at=99999))
         assert _run(ATokenBlacklist.is_blacklisted("custom-1")) is True
+
+
+def test_blacklist_backend_base_ais_blacklisted_delegates_to_is_blacklisted():
+    class StoreBackend(BlacklistBackend):
+        def __init__(self):
+            self.store: set[str] = set()
+
+        async def ablacklist(self, jti, *, expires_at):
+            self.store.add(jti)
+
+        async def is_blacklisted(self, jti):
+            return jti in self.store
+
+    backend = StoreBackend()
+    _run(backend.add("base-alias", expires_at=99999))
+    assert _run(backend.ais_blacklisted("base-alias")) is True
+    assert _run(backend.ais_blacklisted("missing")) is False
+
+
+def test_cache_backend_sync_blacklist_round_trip():
+    backend = CacheBlacklistBackend()
+    backend.blacklist("sync-cache-1", expires_at=(2**31 - 1))
+    assert backend._is_blacklisted_sync("sync-cache-1") is True
+    assert backend._is_blacklisted_sync("never-added") is False
+
+
+def test_cache_backend_ais_blacklisted_alias_returns_same_as_is_blacklisted():
+    backend = CacheBlacklistBackend()
+    _run(backend.add("alias-cache", expires_at=(2**31 - 1)))
+    assert _run(backend.ais_blacklisted("alias-cache")) is True
+    assert _run(backend.ais_blacklisted("missing")) is False
+
+
+@pytest.mark.django_db(transaction=True)
+def test_model_backend_sync_blacklist_round_trip():
+    backend = ModelBlacklistBackend()
+    backend.blacklist("sync-model-1", expires_at=(2**31 - 1))
+    assert backend._is_blacklisted_sync("sync-model-1") is True
+    assert backend._is_blacklisted_sync("never-added") is False
+
+
+@pytest.mark.django_db(transaction=True)
+def test_model_backend_ais_blacklisted_alias_returns_same_as_is_blacklisted():
+    backend = ModelBlacklistBackend()
+    _run(backend.add("alias-model", expires_at=(2**31 - 1)))
+    assert _run(backend.ais_blacklisted("alias-model")) is True
+    assert _run(backend.ais_blacklisted("missing")) is False
+
+
+def test_facade_sync_blacklist_then_sync_check():
+    ATokenBlacklist.blacklist("facade-sync-1", expires_at=(2**31 - 1))
+    assert ATokenBlacklist._sync_is_blacklisted("facade-sync-1") is True
+    assert ATokenBlacklist._sync_is_blacklisted("never-added") is False
+
+
+def test_facade_sync_is_blacklisted_returns_false_for_empty_jti():
+    assert ATokenBlacklist._sync_is_blacklisted("") is False
+
+
+def test_facade_ais_blacklisted_alias_returns_same_as_is_blacklisted():
+    _run(ATokenBlacklist.add("facade-alias", expires_at=(2**31 - 1)))
+    assert _run(ATokenBlacklist.ais_blacklisted("facade-alias")) is True
+    assert _run(ATokenBlacklist.ais_blacklisted("never-added")) is False
+
+
+def test_facade_ais_blacklisted_returns_false_for_empty_jti():
+    assert _run(ATokenBlacklist.ais_blacklisted("")) is False
+
+
+def test_refresh_token_sync_blacklist_uses_facade():
+    user = type("U", (), {"id": 7, "is_active": True})()
+    refresh = RefreshToken.for_user(user)
+    refresh.blacklist()
+    assert ATokenBlacklist._sync_is_blacklisted(refresh.jti) is True

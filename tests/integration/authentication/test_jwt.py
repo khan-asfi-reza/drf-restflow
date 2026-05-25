@@ -229,7 +229,7 @@ def test_token_with_issuer_and_audience_includes_claims():
         assert minted.payload["aud"] == "restflow-clients"
 
 
-def testresolve_token_blacklist_backend_falls_back_to_cache_for_unknown_spec():
+def test_resolve_token_blacklist_backend_falls_back_to_cache_for_unknown_spec():
     from restflow.authentication.jwt import (
         CacheBlacklistBackend,
         resolve_token_blacklist_backend,

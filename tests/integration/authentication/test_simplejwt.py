@@ -2,7 +2,7 @@ import asyncio
 
 import pytest
 from django.contrib.auth import get_user_model
-from django.test import RequestFactory
+from django.test import RequestFactory, override_settings
 from rest_framework.exceptions import AuthenticationFailed
 from rest_framework.request import Request
 
@@ -108,3 +108,31 @@ def test_simplejwtaget_user_raises_when_user_inactive():
     auth = SimpleJWTAuthentication()
     with pytest.raises(AuthenticationFailed, match="inactive"):
         _run(auth.aget_user({"user_id": user.pk}))
+
+
+@pytest.mark.django_db(transaction=True)
+def test_simplejwtaget_user_rejects_token_after_password_change():
+    import importlib
+
+    from restflow.authentication import simplejwt as simplejwt_mod
+
+    User = get_user_model()
+    user = User.objects.create_user(
+        username="sj-pwd", password="orig", is_active=True
+    )
+    with override_settings(
+        SIMPLE_JWT={
+            "SIGNING_KEY": "test-signing-key-test-signing-key-32-chars",
+            "CHECK_REVOKE_TOKEN": True,
+            "REVOKE_TOKEN_CLAIM": "hash_password",
+        }
+    ):
+        importlib.reload(simplejwt_mod)
+        stale_token = {
+            "user_id": user.pk,
+            "hash_password": "stale-hash-not-current",
+        }
+        with pytest.raises(AuthenticationFailed, match="password"):
+            _run(simplejwt_mod.SimpleJWTAuthentication().aget_user(stale_token))
+
+    importlib.reload(simplejwt_mod)
