@@ -478,6 +478,14 @@ class TestMultipleChoiceField(FieldBaseTest):
                 f"input value: {input_value!r}"
             )
 
+    def test_non_string_item_in_list_raises_validation_error(self):
+        class StringField(MultipleChoiceField):
+            lookup_categories = []
+
+        field = StringField(choices=[("a", "A"), ("b", "B")])
+        with pytest.raises(serializers.ValidationError):
+            field.to_internal_value([1, "a"])
+
 
 class BaseListFieldTest(FieldBaseTest):
     invalid_inputs = {1: ['Expected a list of items but got type "int".']}

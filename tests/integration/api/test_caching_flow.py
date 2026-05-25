@@ -9,6 +9,7 @@ from rest_framework.response import Response
 
 from restflow.caching import (
     ArgsKeyField,
+    ConstantKeyField,
     QueryParamsKeyField,
     cache_result,
 )
@@ -81,11 +82,29 @@ class QueryCachedView(AsyncAPIView):
     async def get(self, request):
         return Response(await by_query(request))
 
+class CacheResponseAsyncView(AsyncAPIView):
+    permission_classes = [AllowAny]
+
+    @cache_result(key_constructor={"fields": {"key": ConstantKeyField(key="a", value="b")}})
+    async def get(self, request):
+        HIT_COUNTER["async"] += 1
+        return Response({"value": 10})
+
+class CacheResponseViewSync(AsyncAPIView):
+    permission_classes = [AllowAny]
+
+    @cache_result(key_constructor={"fields": {"key": ConstantKeyField(key="a", value="b")}})
+    def get(self, request):
+        HIT_COUNTER["sync"] += 1
+        return Response({"value": 10})
+
 
 urlpatterns = [
     path("sync-cached/", SyncCachedView.as_view()),
     path("async-cached/", AsyncCachedView.as_view()),
     path("by-query/", QueryCachedView.as_view()),
+    path("async-response/", CacheResponseAsyncView.as_view()),
+    path("sync-response/", CacheResponseViewSync.as_view()),
 ]
 
 
@@ -107,6 +126,20 @@ def configured_urls():
             HIT_COUNTER[k] = 0
         yield
         default_cache.clear()
+
+def test_sync_response_cache_view(configured_urls):
+    client = Client()
+    first = client.get("/sync-response/").json()
+    second = client.get("/sync-response/").json()
+    assert first == second == {"value": 10}
+    assert HIT_COUNTER["sync"] == 1
+
+def test_async_response_cache_view(configured_urls):
+    client = Client()
+    first = client.get("/async-response/").json()
+    second = client.get("/async-response/").json()
+    assert first == second == {"value": 10}
+    assert HIT_COUNTER["async"] == 1
 
 
 def test_sync_view_caches_repeat_calls(configured_urls):
