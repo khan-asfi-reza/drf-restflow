@@ -26,6 +26,43 @@ refresh-token rotation turned on.
 
 ## Configuration
 
+Two settings blocks need updating. `REST_FRAMEWORK` tells DRF to use
+`JWTAuthentication` for incoming requests. `RESTFLOW_SETTINGS["JWT"]`
+configures the signing key, algorithm, and lifetimes.
+
+### Wire JWTAuthentication into DRF
+
+Add `restflow.authentication.JWTAuthentication` to
+`DEFAULT_AUTHENTICATION_CLASSES` so DRF picks it up for every view that
+does not override `authentication_classes`.
+
+```python
+# settings.py
+REST_FRAMEWORK = {
+    "DEFAULT_AUTHENTICATION_CLASSES": [
+        "restflow.authentication.JWTAuthentication",
+    ],
+}
+```
+
+List additional authenticators (session, basic, token) alongside
+`JWTAuthentication` when the same project needs to accept more than one
+credential type. DRF tries them in order and stops at the first match.
+
+To enable JWT only on a specific view, leave the global list empty and
+set `authentication_classes` on that view instead.
+
+```python
+from restflow.authentication import JWTAuthentication
+from restflow.views import AsyncAPIView
+
+
+class ProfileView(AsyncAPIView):
+    authentication_classes = [JWTAuthentication]
+```
+
+### Configure JWT settings
+
 Set the JWT block under `RESTFLOW_SETTINGS` in Django settings. Only
 `SIGNING_KEY` is mandatory, every other key has a working default.
 
@@ -260,7 +297,7 @@ Mount the views under desired paths so client code can hit them.
 # urls.py
 from django.urls import path
 
-from restflow.authentication import (
+from restflow.authentication.views import (
     TokenBlacklistView,
     TokenObtainView,
     TokenRefreshView,
@@ -845,7 +882,7 @@ REST_FRAMEWORK = {
 # urls.py
 from django.urls import path
 
-from restflow.authentication import (
+from restflow.authentication.views import (
     TokenBlacklistView,
     TokenObtainView,
     TokenRefreshView,

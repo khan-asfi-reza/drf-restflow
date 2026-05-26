@@ -8,8 +8,10 @@ from restflow.authentication import (
     RemoteUserAuthentication,
     SessionAuthentication,
     TokenAuthentication,
-    TokenBlacklistView,
     TokenError,
+)
+from restflow.authentication.views import (
+    TokenBlacklistView,
     TokenObtainView,
     TokenRefreshView,
 )

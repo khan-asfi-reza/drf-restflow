@@ -9,11 +9,13 @@ from django.test import RequestFactory, override_settings
 from restflow.authentication import (
     AccessToken,
     RefreshToken,
+)
+from restflow.authentication.jwt import ATokenBlacklist
+from restflow.authentication.views import (
     TokenBlacklistView,
     TokenObtainView,
     TokenRefreshView,
 )
-from restflow.authentication.jwt import ATokenBlacklist
 
 
 def _run(coro):

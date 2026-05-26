@@ -254,7 +254,7 @@ RESTFLOW_SETTINGS = {
 ```python
 # urls.py
 from django.urls import path
-from restflow.authentication import (
+from restflow.authentication.views import (
     TokenObtainView, TokenRefreshView, TokenBlacklistView,
 )
 
