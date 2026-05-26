@@ -215,6 +215,22 @@ The wrapped function exposes `get_with_metadata`, `refresh`,
 `bypass_cache`, `delete_cache`, `delete_by_prefix`, `invalidate_all`,
 and the matching `a`-prefixed async methods.
 
+For whole-view HTTP caching, restflow ships `@cache_response`. It caches
+the rendered response (content, status code, headers) and rebuilds a
+plain `HttpResponse` on a hit, skipping the view body, serializer, and
+renderer. It works on class-based view methods (sync and async) and on
+DRF's `@api_view` function-based views (sync only).
+
+```python
+from restflow.caching import cache_response
+
+
+class TimelineView(APIView):
+    @cache_response(ttl=60)
+    def get(self, request):
+        return Response({"items": expensive_lookup()})
+```
+
 See the [Caching guide](https://restflow.khanasfireza.dev/guide/caching/)
 for the full API.
 

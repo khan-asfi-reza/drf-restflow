@@ -104,6 +104,7 @@ See the [Dispatchers guide](dispatchers.md) for the per-broker setup.
 | --- | --- |
 | Building cache keys declaratively | [Key Constructors](key-constructors.md) |
 | The `@cache_result` decorator and `CachedWrapper` methods | [cache_result](cache-result.md) |
+| The `@cache_response` decorator for whole-view HTTP caching | [cache_response](cache-response.md) |
 | Connecting model signals to cache invalidation | [Invalidation Rules](invalidation.md) |
 | Choosing where invalidation runs | [Dispatchers](dispatchers.md) |
 | Reporting cache status to the client | [Response Headers](response-headers.md) |

@@ -218,6 +218,13 @@ def get_user_payload(user_id: int):
     return expensive_lookup(user_id)
 ```
 
+`rewarm=True` only works when `field_mapping` covers every required
+argument of the wrapped function. A function like
+`result(a, b, c, d)` with only `a` in `field_mapping` cannot rewarm
+because `b`, `c`, and `d` have no source on the model instance. See
+[Invalidation Rules > Refresh instead of delete](invalidation.md#refresh-instead-of-delete)
+for the full discussion.
+
 ## Async support
 
 `@cache_result` works on `async def` targets. Restflow detects the

@@ -33,11 +33,6 @@ async def aperform_post_fetches(items, post_fetches, *, many):
 
 
 class APIViewHelpersMixin:
-    """Convenience helpers shared by APIView and AsyncAPIView.
-
-    Layers serializer and pagination resolution on top of DRF's APIView so
-    typical endpoints avoid pagination and serializer boilerplate.
-    """
 
     serializer_class = None
     request_serializer_class = None
@@ -182,32 +177,9 @@ class APIViewHelpersMixin:
 
 
 class APIView(APIViewHelpersMixin, DRFAPIView):
-    """DRF APIView plus restflow response and serializer helpers.
-
-    Sync view base. Use `restflow.views.AsyncAPIView` for async dispatch.
-
-        class UserView(APIView):
-            serializer_class = UserSer
-            pagination_class = PageNumberPagination
-
-            def get(self, request):
-                return self.paginated_response(User.objects.all())
-
-            def post(self, request):
-                ser = self.validated_serializer()
-                user = ser.save()
-                return self.serialized_response(user, status=201)
-    """
-
+    pass
 
 class AsyncAPIView(APIViewHelpersMixin, DRFAPIView):
-    """
-    APIView whose dispatch loop is async.
-
-    Adds an async dispatch and a*-prefixed surface (ainitial, ahandle_exception,
-    avalidated_serializer, aserialized_response, apaginated_response) on top
-    of DRF's APIView.
-    """
 
     @classproperty
     def view_is_async(cls):  # noqa: N805

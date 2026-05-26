@@ -12,14 +12,6 @@ async def asave_serializer(serializer):
 
 
 class CreateModelMixin:
-    """
-    Create a model instance, served via the sync pipeline.
-
-    Routes through restflow's validated_serializer (request-side serializer)
-    and serialized_response (response-side serializer) so request/response
-    serializer split, post-fetches, and pagination are all honoured.
-    """
-
     def create(self, request, *args, **kwargs):
         """
         Validates the request body, persists the instance, and returns 201.
@@ -49,11 +41,6 @@ class CreateModelMixin:
 
 
 class ListModelMixin:
-    """
-    List a queryset, served via the sync pipeline. Routes through
-    paginated_response so pagination, response-side serializer, and
-    post-fetches are honoured.
-    """
 
     def list(self, request, *args, **kwargs):
         """
@@ -64,9 +51,6 @@ class ListModelMixin:
 
 
 class RetrieveModelMixin:
-    """
-    Retrieve a model instance, served via the sync pipeline.
-    """
 
     def retrieve(self, request, *args, **kwargs):
         """
@@ -77,9 +61,6 @@ class RetrieveModelMixin:
 
 
 class UpdateModelMixin:
-    """
-    Update a model instance, served via the sync pipeline.
-    """
 
     def update(self, request, *args, **kwargs):
         """
@@ -113,9 +94,6 @@ class UpdateModelMixin:
 
 
 class DestroyModelMixin:
-    """
-    Destroy a model instance, served via the sync pipeline.
-    """
 
     def destroy(self, request, *args, **kwargs):
         """
@@ -133,9 +111,6 @@ class DestroyModelMixin:
 
 
 class AsyncCreateModelMixin:
-    """
-    Create a model instance, served via the async pipeline.
-    """
 
     async def create(self, request, *args, **kwargs):
         """
@@ -166,9 +141,6 @@ class AsyncCreateModelMixin:
 
 
 class AsyncListModelMixin:
-    """
-    List a queryset, served via the async pipeline.
-    """
 
     async def list(self, request, *args, **kwargs):
         """
@@ -185,9 +157,6 @@ class AsyncListModelMixin:
 
 
 class AsyncRetrieveModelMixin:
-    """
-    Retrieve a model instance, served via the async pipeline.
-    """
 
     async def retrieve(self, request, *args, **kwargs):
         """
@@ -198,9 +167,6 @@ class AsyncRetrieveModelMixin:
 
 
 class AsyncUpdateModelMixin:
-    """
-    Update a model instance, served via the async pipeline.
-    """
 
     async def update(self, request, *args, **kwargs):
         """
@@ -234,9 +200,6 @@ class AsyncUpdateModelMixin:
 
 
 class AsyncDestroyModelMixin:
-    """
-    Destroy a model instance, served via the async pipeline.
-    """
 
     async def destroy(self, request, *args, **kwargs):
         """

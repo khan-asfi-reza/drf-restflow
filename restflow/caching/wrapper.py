@@ -142,7 +142,7 @@ class CachedWrapper(Generic[P, T]):
         if data and isinstance(data, dict) and CACHED_DATA_VALUE_KEY in data:
             result = data[CACHED_DATA_VALUE_KEY]
             metadata = data.get(CACHED_DATA_METADATA_KEY) or {}
-            metadata[METADATA_CACHE_STATUS] = CacheStatus.HIT
+            metadata[METADATA_CACHE_STATUS] = CacheStatus.HIT.value
             return result, metadata
         return data, None
 
@@ -159,7 +159,7 @@ class CachedWrapper(Generic[P, T]):
         return {
             METADATA_CACHED_AT_KEY: timezone.now().isoformat(),
             METADATA_RESET_AT_KEY: reset_at,
-            METADATA_CACHE_STATUS: CacheStatus.MISS
+            METADATA_CACHE_STATUS: CacheStatus.MISS.value
         }
 
     def _build_cache_payload(self, value, metadata,):
@@ -511,5 +511,5 @@ def set_response_cache_header(response, metadata):
     if reset_at:
         response["X-Cache-reset-at"] = reset_at
     if status:
-        response["X-Cache-status"] = str(status)
+        response["X-Cache-status"] = str(getattr(status, "value", status))
     return response

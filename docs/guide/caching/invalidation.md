@@ -163,6 +163,51 @@ InvalidationRule(
 )
 ```
 
+!!! warning "Rewarm needs every required function argument"
+    Rewarming calls the wrapped function with the kwargs built from
+    `field_mapping`. The function must be callable with only those
+    kwargs. If the wrapped function takes additional required
+    arguments that the model instance cannot supply, rewarming raises
+    a binding error and the rule falls back to deletion (or to logging
+    the error, depending on `raise_exception`).
+
+    ```python
+    @cache_result(
+        key_constructor=AKey,  # `a` is the partition key
+        invalidates_on=[
+            InvalidationRule(
+                model=A,
+                field_mapping={"a": "id"},
+                rewarm=True,
+            ),
+        ],
+    )
+    def result(a, b, c, d): ...
+    ```
+
+    `field_mapping` only resolves `a` from the model. The wrapper then
+    tries `result(a=<id>)` for the rewarm and binding fails because
+    `b`, `c`, and `d` have no defaults and no source.
+
+    Choices when this comes up:
+
+    - Drop `rewarm=True`. The rule deletes the partition with
+      `delete_by_prefix(a=<id>)` and the next call repopulates with
+      the real arguments. This is the default and almost always the
+      right answer for functions whose other arguments come from the
+      request.
+    - Give every non-partition argument a default the rewarm can
+      use, so `result(a=<id>)` is a valid call that produces a
+      meaningful cached value.
+    - Use a custom `invalidator=` that does the rewarm by calling
+      `wrapper.refresh(...)` with every argument it can reconstruct,
+      including ones derived from the saved instance.
+
+    The same constraint applies to `@cache_response`: rewarming a
+    view method needs the full call signature, but invalidation only
+    has the model fields. Prefer deletion for view-method caches and
+    let the next request rebuild the response.
+
 ## Choosing a dispatcher
 
 Each rule can pick its own dispatcher. The dispatcher decides where
