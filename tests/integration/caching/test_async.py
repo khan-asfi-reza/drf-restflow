@@ -62,8 +62,8 @@ def test_aget_with_metadata_marks_miss_then_hit():
     val1, meta1 = _run(get_x.aget_with_metadata(1))
     val2, meta2 = _run(get_x.aget_with_metadata(1))
     assert val1 == val2 == 1
-    assert meta1["cache_status"].value == "MISS"
-    assert meta2["cache_status"].value == "HIT"
+    assert meta1["cache_status"] == "MISS"
+    assert meta2["cache_status"] == "HIT"
 
 
 def test_arefresh_overwrites_cache():

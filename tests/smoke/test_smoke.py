@@ -17,6 +17,7 @@ from restflow.authentication.views import (
 )
 from restflow.responses import (
     NDJSONResponse,
+    Response,
     SSEResponse,
     StreamingJSONListResponse,
 )
@@ -25,6 +26,7 @@ from restflow.caching import (
     CACHE_MISSING,
     ArgsKeyField,
     AsyncIODispatcher,
+    CachedResponseWrapper,
     CachedWrapper,
     CacheKeyField,
     CacheRegister,
@@ -44,7 +46,10 @@ from restflow.caching import (
     KeyConstructor,
     QueryParamsKeyField,
     RequestValueKeyField,
+    ResponseCacheKeyConstructor,
     ThreadPoolDispatcher,
+    ViewKwargsKeyField,
+    cache_response,
     cache_result,
     register_dispatcher,
     registered_dispatcher_names,
@@ -147,12 +152,13 @@ def test_package_exposes_version_string():
 def test_caching_public_api_imports_resolve_to_real_objects():
     names = [
         CACHE_MISSING, ArgsKeyField, AsyncIODispatcher, CacheKeyField,
-        CacheRegister, CacheStatus, CachedWrapper, CeleryDispatcher,
-        ConstantKeyField, DefaultKeyConstructor, Dispatcher, DjangoModelKeyField,
-        DjangoQDispatcher, DjangoRqDispatcher, DramatiqDispatcher,
-        DrfSerializerKeyField, InlineDispatcher, InlineKeyConstructor,
-        InvalidationRule, KeyConstructor, QueryParamsKeyField,
-        RequestValueKeyField, ThreadPoolDispatcher, cache_result,
+        CacheRegister, CacheStatus, CachedResponseWrapper, CachedWrapper,
+        CeleryDispatcher, ConstantKeyField, DefaultKeyConstructor, Dispatcher,
+        DjangoModelKeyField, DjangoQDispatcher, DjangoRqDispatcher,
+        DramatiqDispatcher, DrfSerializerKeyField, InlineDispatcher,
+        InlineKeyConstructor, InvalidationRule, KeyConstructor,
+        QueryParamsKeyField, RequestValueKeyField, ResponseCacheKeyConstructor,
+        ThreadPoolDispatcher, ViewKwargsKeyField, cache_response, cache_result,
         register_dispatcher, registered_dispatcher_names,
         set_response_cache_header,
     ]
@@ -230,7 +236,7 @@ def test_authentication_public_api_imports_resolve():
 
 
 def test_responses_public_api_imports_resolve():
-    names = [NDJSONResponse, SSEResponse, StreamingJSONListResponse]
+    names = [NDJSONResponse, Response, SSEResponse, StreamingJSONListResponse]
     assert all(item is not None for item in names)
 
 

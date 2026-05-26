@@ -80,6 +80,7 @@ nav:
           - Overview: guide/caching/index.md
           - Key Constructors: guide/caching/key-constructors.md
           - cache_result: guide/caching/cache-result.md
+          - cache_response: guide/caching/cache-response.md
           - Invalidation Rules: guide/caching/invalidation.md
           - Dispatchers: guide/caching/dispatchers.md
           - Response Headers: guide/caching/response-headers.md
@@ -125,6 +126,7 @@ nav:
   - API Reference:
       - Caching:
           - cache_result: api/caching/cache-result.md
+          - cache_response: api/caching/cache-response.md
           - KeyConstructor: api/caching/key-constructor.md
           - Key Fields: api/caching/key-fields.md
           - InvalidationRule: api/caching/invalidation-rule.md
