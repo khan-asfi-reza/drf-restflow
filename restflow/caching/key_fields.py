@@ -357,7 +357,7 @@ class ArgsKeyField(CacheKeyField):
 
     def get_key_payload(self, func, args, kwargs) -> dict[str, Any]:
         sig = inspect.signature(func)
-        bound_args = sig.bind(*args, **kwargs)
+        bound_args = sig.bind_partial(*args, **kwargs)
         bound_args.apply_defaults()
 
         result = {}
@@ -382,6 +382,24 @@ class ArgsKeyField(CacheKeyField):
                 result[name] = resolved
 
         return result
+
+
+class ViewKwargsKeyField(ArgsKeyField):
+    """
+    Cache-key field for view methods. Captures URL kwargs from the wrapped
+    method's signature and skips `self`, `cls`, and `request` so transient
+    per-request objects never end up in the key.
+
+    Default companion to ResponseCacheKeyConstructor.
+    """
+
+    SKIP = {"self", "cls", "request"}
+
+    def get_key_payload(self, func, args, kwargs) -> dict[str, Any]:
+        payload = super().get_key_payload(func, args, kwargs)
+        for name in self.SKIP:
+            payload.pop(name, None)
+        return payload
 
 
 class DrfSerializerKeyField(CacheKeyField):

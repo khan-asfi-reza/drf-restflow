@@ -74,46 +74,30 @@ class AsyncGenericAPIView(AsyncAPIView, drf_generics.GenericAPIView):
 
 
 class AsyncCreateAPIView(AsyncCreateModelMixin, AsyncGenericAPIView):
-    """
-    Concrete view for creating a model instance, served via the async pipeline.
-    """
 
     async def post(self, request, *args, **kwargs):
         return await self.create(request, *args, **kwargs)
 
 
 class AsyncListAPIView(AsyncListModelMixin, AsyncGenericAPIView):
-    """
-    Concrete view for listing a queryset, served via the async pipeline.
-    """
 
     async def get(self, request, *args, **kwargs):
         return await self.list(request, *args, **kwargs)
 
 
 class AsyncRetrieveAPIView(AsyncRetrieveModelMixin, AsyncGenericAPIView):
-    """
-    Concrete view for retrieving a model instance, served via the async
-    pipeline.
-    """
 
     async def get(self, request, *args, **kwargs):
         return await self.retrieve(request, *args, **kwargs)
 
 
 class AsyncDestroyAPIView(AsyncDestroyModelMixin, AsyncGenericAPIView):
-    """
-    Concrete view for deleting a model instance, served via the async pipeline.
-    """
 
     async def delete(self, request, *args, **kwargs):
         return await self.destroy(request, *args, **kwargs)
 
 
 class AsyncUpdateAPIView(AsyncUpdateModelMixin, AsyncGenericAPIView):
-    """
-    Concrete view for updating a model instance, served via the async pipeline.
-    """
 
     async def put(self, request, *args, **kwargs):
         return await self.update(request, *args, **kwargs)
@@ -125,10 +109,6 @@ class AsyncUpdateAPIView(AsyncUpdateModelMixin, AsyncGenericAPIView):
 class AsyncListCreateAPIView(
     AsyncListModelMixin, AsyncCreateModelMixin, AsyncGenericAPIView
 ):
-    """
-    Concrete view for listing a queryset or creating a model instance, served
-    via the async pipeline.
-    """
 
     async def get(self, request, *args, **kwargs):
         return await self.list(request, *args, **kwargs)
@@ -158,10 +138,6 @@ class AsyncRetrieveUpdateAPIView(
 class AsyncRetrieveDestroyAPIView(
     AsyncRetrieveModelMixin, AsyncDestroyModelMixin, AsyncGenericAPIView
 ):
-    """
-    Concrete view for retrieving or deleting a model instance, served via the
-    async pipeline.
-    """
 
     async def get(self, request, *args, **kwargs):
         return await self.retrieve(request, *args, **kwargs)
@@ -176,10 +152,6 @@ class AsyncRetrieveUpdateDestroyAPIView(
     AsyncDestroyModelMixin,
     AsyncGenericAPIView,
 ):
-    """
-    Concrete view for retrieving, updating, or deleting a model instance,
-    served via the async pipeline.
-    """
 
     async def get(self, request, *args, **kwargs):
         return await self.retrieve(request, *args, **kwargs)
