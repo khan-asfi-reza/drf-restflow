@@ -333,7 +333,7 @@ RESTFLOW_SETTINGS = {
 
 ```python
 # urls.py
-from restflow.authentication import (
+from restflow.authentication.views import (
     TokenObtainView, TokenRefreshView, TokenBlacklistView,
 )
 
