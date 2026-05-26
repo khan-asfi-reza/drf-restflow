@@ -16,7 +16,7 @@
         <link rel="prev" href="../key-constructors/">
       
       
-        <link rel="next" href="../invalidation/">
+        <link rel="next" href="../cache-response/">
       
       
         
@@ -704,6 +704,8 @@
       
         
       
+        
+      
     
     
     
@@ -1097,6 +1099,34 @@
   
 </nav>
       
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../cache-response/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    cache_response
+  
+
+    
+  </span>
+  
+  
+
+      </a>
     </li>
   
 
@@ -2587,6 +2617,8 @@
       
         
       
+        
+      
     
     
     
@@ -2645,6 +2677,34 @@
     
   
     cache_result
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../api/caching/cache-response/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    cache_response
   
 
     
@@ -4599,6 +4659,12 @@ the function's return value.</p>
 <a id="__codelineno-14-31" name="__codelineno-14-31" href="#__codelineno-14-31"></a><span class="k">def</span><span class="w"> </span><span class="nf">get_user_payload</span><span class="p">(</span><span class="n">user_id</span><span class="p">:</span> <span class="nb">int</span><span class="p">):</span>
 <a id="__codelineno-14-32" name="__codelineno-14-32" href="#__codelineno-14-32"></a>    <span class="k">return</span> <span class="n">expensive_lookup</span><span class="p">(</span><span class="n">user_id</span><span class="p">)</span>
 </code></pre></div>
+<p><code>rewarm=True</code> only works when <code>field_mapping</code> covers every required
+argument of the wrapped function. A function like
+<code>result(a, b, c, d)</code> with only <code>a</code> in <code>field_mapping</code> cannot rewarm
+because <code>b</code>, <code>c</code>, and <code>d</code> have no source on the model instance. See
+<a href="../invalidation/#refresh-instead-of-delete">Invalidation Rules &gt; Refresh instead of delete</a>
+for the full discussion.</p>
 <h2 id="async-support">Async support<a class="headerlink" href="#async-support" title="Permanent link">&para;</a></h2>
 <p><code>@cache_result</code> works on <code>async def</code> targets. Restflow detects the
 coroutine function at decoration time and drives every cache I/O

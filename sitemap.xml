@@ -33,6 +33,10 @@
          <lastmod>2026-05-26</lastmod>
     </url>
     <url>
+         <loc>https://restflow.khanasfireza.dev/api/caching/cache-response/</loc>
+         <lastmod>2026-05-26</lastmod>
+    </url>
+    <url>
          <loc>https://restflow.khanasfireza.dev/api/caching/cache-result/</loc>
          <lastmod>2026-05-26</lastmod>
     </url>
@@ -174,6 +178,10 @@
     </url>
     <url>
          <loc>https://restflow.khanasfireza.dev/guide/caching/</loc>
+         <lastmod>2026-05-26</lastmod>
+    </url>
+    <url>
+         <loc>https://restflow.khanasfireza.dev/guide/caching/cache-response/</loc>
          <lastmod>2026-05-26</lastmod>
     </url>
     <url>

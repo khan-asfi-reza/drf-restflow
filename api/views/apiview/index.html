@@ -699,6 +699,8 @@
       
         
       
+        
+      
     
     
     
@@ -794,6 +796,34 @@
     
   
     cache_result
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guide/caching/cache-response/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    cache_response
   
 
     
@@ -2297,6 +2327,8 @@
       
         
       
+        
+      
     
     
     
@@ -2355,6 +2387,34 @@
     
   
     cache_result
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../caching/cache-response/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    cache_response
   
 
     
@@ -4243,21 +4303,6 @@ helper method surface.</p>
 
 
 
-        <p>DRF APIView plus restflow response and serializer helpers.</p>
-<p>Sync view base. Use <code>restflow.views.AsyncAPIView</code> for async dispatch.</p>
-<div class="highlight"><pre><span></span><code>class UserView(APIView):
-    serializer_class = UserSer
-    pagination_class = PageNumberPagination
-
-    def get(self, request):
-        return self.paginated_response(User.objects.all())
-
-    def post(self, request):
-        ser = self.validated_serializer()
-        user = ser.save()
-        return self.serialized_response(user, status=201)
-</code></pre></div>
-
 
 
 
@@ -4303,11 +4348,6 @@ helper method surface.</p>
               Bases: <code><span title="restflow.views.views.APIViewHelpersMixin">APIViewHelpersMixin</span></code>, <code><span title="rest_framework.views.APIView">APIView</span></code></p>
 
 
-
-        <p>APIView whose dispatch loop is async.</p>
-<p>Adds an async dispatch and a*-prefixed surface (ainitial, ahandle_exception,
-avalidated_serializer, aserialized_response, apaginated_response) on top
-of DRF's APIView.</p>
 
 
 

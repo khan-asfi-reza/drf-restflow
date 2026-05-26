@@ -13,7 +13,7 @@
         <link rel="canonical" href="https://restflow.khanasfireza.dev/guide/caching/invalidation/">
       
       
-        <link rel="prev" href="../cache-result/">
+        <link rel="prev" href="../cache-response/">
       
       
         <link rel="next" href="../dispatchers/">
@@ -704,6 +704,8 @@
       
         
       
+        
+      
     
     
     
@@ -799,6 +801,34 @@
     
   
     cache_result
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../cache-response/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    cache_response
   
 
     
@@ -2488,6 +2518,8 @@
       
         
       
+        
+      
     
     
     
@@ -2546,6 +2578,34 @@
     
   
     cache_result
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../api/caching/cache-response/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    cache_response
   
 
     
@@ -4347,15 +4407,57 @@ recompute anyway.</p>
 <a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a>    <span class="n">rewarm</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
 <a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a><span class="p">)</span>
 </code></pre></div>
+<div class="admonition warning">
+<p class="admonition-title">Rewarm needs every required function argument</p>
+<p>Rewarming calls the wrapped function with the kwargs built from
+<code>field_mapping</code>. The function must be callable with only those
+kwargs. If the wrapped function takes additional required
+arguments that the model instance cannot supply, rewarming raises
+a binding error and the rule falls back to deletion (or to logging
+the error, depending on <code>raise_exception</code>).</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="nd">@cache_result</span><span class="p">(</span>
+<a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a>    <span class="n">key_constructor</span><span class="o">=</span><span class="n">AKey</span><span class="p">,</span>  <span class="c1"># `a` is the partition key</span>
+<a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a>    <span class="n">invalidates_on</span><span class="o">=</span><span class="p">[</span>
+<a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a>        <span class="n">InvalidationRule</span><span class="p">(</span>
+<a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a>            <span class="n">model</span><span class="o">=</span><span class="n">A</span><span class="p">,</span>
+<a id="__codelineno-8-6" name="__codelineno-8-6" href="#__codelineno-8-6"></a>            <span class="n">field_mapping</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;a&quot;</span><span class="p">:</span> <span class="s2">&quot;id&quot;</span><span class="p">},</span>
+<a id="__codelineno-8-7" name="__codelineno-8-7" href="#__codelineno-8-7"></a>            <span class="n">rewarm</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+<a id="__codelineno-8-8" name="__codelineno-8-8" href="#__codelineno-8-8"></a>        <span class="p">),</span>
+<a id="__codelineno-8-9" name="__codelineno-8-9" href="#__codelineno-8-9"></a>    <span class="p">],</span>
+<a id="__codelineno-8-10" name="__codelineno-8-10" href="#__codelineno-8-10"></a><span class="p">)</span>
+<a id="__codelineno-8-11" name="__codelineno-8-11" href="#__codelineno-8-11"></a><span class="k">def</span><span class="w"> </span><span class="nf">result</span><span class="p">(</span><span class="n">a</span><span class="p">,</span> <span class="n">b</span><span class="p">,</span> <span class="n">c</span><span class="p">,</span> <span class="n">d</span><span class="p">):</span> <span class="o">...</span>
+</code></pre></div>
+<p><code>field_mapping</code> only resolves <code>a</code> from the model. The wrapper then
+tries <code>result(a=&lt;id&gt;)</code> for the rewarm and binding fails because
+<code>b</code>, <code>c</code>, and <code>d</code> have no defaults and no source.</p>
+<p>Choices when this comes up:</p>
+<ul>
+<li>Drop <code>rewarm=True</code>. The rule deletes the partition with
+  <code>delete_by_prefix(a=&lt;id&gt;)</code> and the next call repopulates with
+  the real arguments. This is the default and almost always the
+  right answer for functions whose other arguments come from the
+  request.</li>
+<li>Give every non-partition argument a default the rewarm can
+  use, so <code>result(a=&lt;id&gt;)</code> is a valid call that produces a
+  meaningful cached value.</li>
+<li>Use a custom <code>invalidator=</code> that does the rewarm by calling
+  <code>wrapper.refresh(...)</code> with every argument it can reconstruct,
+  including ones derived from the saved instance.</li>
+</ul>
+<p>The same constraint applies to <code>@cache_response</code>: rewarming a
+view method needs the full call signature, but invalidation only
+has the model fields. Prefer deletion for view-method caches and
+let the next request rebuild the response.</p>
+</div>
 <h2 id="choosing-a-dispatcher">Choosing a dispatcher<a class="headerlink" href="#choosing-a-dispatcher" title="Permanent link">&para;</a></h2>
 <p>Each rule can pick its own dispatcher. The dispatcher decides where
 the invalidation work runs.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="n">InvalidationRule</span><span class="p">(</span>
-<a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a>    <span class="n">model</span><span class="o">=</span><span class="n">User</span><span class="p">,</span>
-<a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a>    <span class="n">field_mapping</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;user_id&quot;</span><span class="p">:</span> <span class="s2">&quot;id&quot;</span><span class="p">},</span>
-<a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a>    <span class="n">dispatcher</span><span class="o">=</span><span class="s2">&quot;celery&quot;</span><span class="p">,</span>
-<a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a>    <span class="n">dispatcher_config</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;queue&quot;</span><span class="p">:</span> <span class="s2">&quot;cache-invalidation&quot;</span><span class="p">},</span>
-<a id="__codelineno-8-6" name="__codelineno-8-6" href="#__codelineno-8-6"></a><span class="p">)</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="n">InvalidationRule</span><span class="p">(</span>
+<a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a>    <span class="n">model</span><span class="o">=</span><span class="n">User</span><span class="p">,</span>
+<a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a>    <span class="n">field_mapping</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;user_id&quot;</span><span class="p">:</span> <span class="s2">&quot;id&quot;</span><span class="p">},</span>
+<a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a>    <span class="n">dispatcher</span><span class="o">=</span><span class="s2">&quot;celery&quot;</span><span class="p">,</span>
+<a id="__codelineno-9-5" name="__codelineno-9-5" href="#__codelineno-9-5"></a>    <span class="n">dispatcher_config</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;queue&quot;</span><span class="p">:</span> <span class="s2">&quot;cache-invalidation&quot;</span><span class="p">},</span>
+<a id="__codelineno-9-6" name="__codelineno-9-6" href="#__codelineno-9-6"></a><span class="p">)</span>
 </code></pre></div>
 <p><code>dispatcher</code> accepts either a registered name (<code>"celery"</code>,
 <code>"django_rq"</code>, <code>"django_q"</code>, <code>"dramatiq"</code>, <code>"asyncio"</code>,
@@ -4369,12 +4471,12 @@ configuration.</p>
 dispatch with other rules that have the same dispatcher batch key.
 Off by default because a single batch failure retries the whole
 group, which is rarely the desired behaviour for cache invalidation.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="n">InvalidationRule</span><span class="p">(</span>
-<a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a>    <span class="n">model</span><span class="o">=</span><span class="n">User</span><span class="p">,</span>
-<a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a>    <span class="n">field_mapping</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;user_id&quot;</span><span class="p">:</span> <span class="s2">&quot;id&quot;</span><span class="p">},</span>
-<a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a>    <span class="n">dispatcher</span><span class="o">=</span><span class="s2">&quot;celery&quot;</span><span class="p">,</span>
-<a id="__codelineno-9-5" name="__codelineno-9-5" href="#__codelineno-9-5"></a>    <span class="n">batch</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
-<a id="__codelineno-9-6" name="__codelineno-9-6" href="#__codelineno-9-6"></a><span class="p">)</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="n">InvalidationRule</span><span class="p">(</span>
+<a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a>    <span class="n">model</span><span class="o">=</span><span class="n">User</span><span class="p">,</span>
+<a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a>    <span class="n">field_mapping</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;user_id&quot;</span><span class="p">:</span> <span class="s2">&quot;id&quot;</span><span class="p">},</span>
+<a id="__codelineno-10-4" name="__codelineno-10-4" href="#__codelineno-10-4"></a>    <span class="n">dispatcher</span><span class="o">=</span><span class="s2">&quot;celery&quot;</span><span class="p">,</span>
+<a id="__codelineno-10-5" name="__codelineno-10-5" href="#__codelineno-10-5"></a>    <span class="n">batch</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+<a id="__codelineno-10-6" name="__codelineno-10-6" href="#__codelineno-10-6"></a><span class="p">)</span>
 </code></pre></div>
 <h2 id="error-handling">Error handling<a class="headerlink" href="#error-handling" title="Permanent link">&para;</a></h2>
 <p>Errors that escape the registry are caught and logged by default, so
@@ -4382,11 +4484,11 @@ a transient failure in a worker does not crash the model save. To
 make errors propagate (so a broker can retry or dead-letter), set
 <code>raise_exception=True</code> on the rule, on the dispatcher's settings, or
 globally.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="n">InvalidationRule</span><span class="p">(</span>
-<a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a>    <span class="n">model</span><span class="o">=</span><span class="n">User</span><span class="p">,</span>
-<a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a>    <span class="n">field_mapping</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;user_id&quot;</span><span class="p">:</span> <span class="s2">&quot;id&quot;</span><span class="p">},</span>
-<a id="__codelineno-10-4" name="__codelineno-10-4" href="#__codelineno-10-4"></a>    <span class="n">raise_exception</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
-<a id="__codelineno-10-5" name="__codelineno-10-5" href="#__codelineno-10-5"></a><span class="p">)</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a><span class="n">InvalidationRule</span><span class="p">(</span>
+<a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a>    <span class="n">model</span><span class="o">=</span><span class="n">User</span><span class="p">,</span>
+<a id="__codelineno-11-3" name="__codelineno-11-3" href="#__codelineno-11-3"></a>    <span class="n">field_mapping</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;user_id&quot;</span><span class="p">:</span> <span class="s2">&quot;id&quot;</span><span class="p">},</span>
+<a id="__codelineno-11-4" name="__codelineno-11-4" href="#__codelineno-11-4"></a>    <span class="n">raise_exception</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+<a id="__codelineno-11-5" name="__codelineno-11-5" href="#__codelineno-11-5"></a><span class="p">)</span>
 </code></pre></div>
 <p>The resolution order, highest priority first:</p>
 <ol>
