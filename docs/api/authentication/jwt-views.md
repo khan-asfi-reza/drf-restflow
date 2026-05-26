@@ -1,17 +1,17 @@
 # JWT views
 
 Reference for the pre-built obtain, refresh, and blacklist views
-shipped under `restflow.authentication`. See the
+shipped under `restflow.authentication.views`. See the
 [JWT guide](../../guide/authentication/jwt.md) for usage.
 
-::: restflow.authentication.TokenObtainView
+::: restflow.authentication.views.TokenObtainView
 
-::: restflow.authentication.TokenRefreshView
+::: restflow.authentication.views.TokenRefreshView
 
-::: restflow.authentication.TokenBlacklistView
+::: restflow.authentication.views.TokenBlacklistView
 
-::: restflow.authentication.TokenObtainSerializer
+::: restflow.authentication.serializers.TokenObtainSerializer
 
-::: restflow.authentication.TokenRefreshSerializer
+::: restflow.authentication.serializers.TokenRefreshSerializer
 
-::: restflow.authentication.TokenBlacklistSerializer
+::: restflow.authentication.serializers.TokenBlacklistSerializer
