@@ -5382,7 +5382,7 @@ and used to get new access tokens through the
 <p><code>TokenObtainView</code>, <code>TokenRefreshView</code>, and <code>TokenBlacklistView</code> are
 async APIViews that handle the obtain, refresh, and blacklist flows:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-17-1" name="__codelineno-17-1" href="#__codelineno-17-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">django.urls</span><span class="w"> </span><span class="kn">import</span> <span class="n">path</span>
-<a id="__codelineno-17-2" name="__codelineno-17-2" href="#__codelineno-17-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">restflow.authentication</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+<a id="__codelineno-17-2" name="__codelineno-17-2" href="#__codelineno-17-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">restflow.authentication.views</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
 <a id="__codelineno-17-3" name="__codelineno-17-3" href="#__codelineno-17-3"></a>    <span class="n">TokenObtainView</span><span class="p">,</span> <span class="n">TokenRefreshView</span><span class="p">,</span> <span class="n">TokenBlacklistView</span><span class="p">,</span>
 <a id="__codelineno-17-4" name="__codelineno-17-4" href="#__codelineno-17-4"></a><span class="p">)</span>
 <a id="__codelineno-17-5" name="__codelineno-17-5" href="#__codelineno-17-5"></a>
