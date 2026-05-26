@@ -8,14 +8,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.1.0] - 2026-05-26
 
 ### Added
-- `cache_response` now accepts `set_cache_headers=False`. When set to `True`, the wrapper attaches the `X-Cached-at`, `X-Cache-reset-at`, and `X-Cache-status` headers to every returned response so clients and monitoring can tell hits from misses without a separate metadata lookup.
-- `@cache_response` now works on DRF's `@api_view` function-based views (sync only). `extract_view_and_request` falls back to `request.parser_context["view"]` when the wrapped function does not carry a `self` argument, so the cached response renders with the same `accepted_renderer` as a normal `@api_view` call.
-- Documentation: new [cache_response guide](guide/caching/cache-response.md) and matching API reference page, plus rewarm caveats added to the invalidation guide.
+
+#### Caching
+- `@cache_response` decorator for whole-view and `@api_view` HTTP caching. Stores the rendered response triple (content, status code, headers) and rebuilds a plain `HttpResponse` on a hit.
+- `set_cache_headers=False` flag on `@cache_response`. When set to `True`, the wrapper attaches the `X-Cached-at`, `X-Cache-reset-at`, and `X-Cache-status` headers to every returned response so clients and monitoring can tell hits from misses without a separate metadata lookup.
+- `ResponseCacheKeyConstructor` default key constructor for `@cache_response`. Hashes the full query string and captures the view method's URL kwargs as the partition.
+- `ViewKwargsKeyField` cache-key field that captures a view method's URL kwargs while skipping `self`, `cls`, and `request`.
+
+#### Responses
+- `restflow.responses.Response` with an `arender()` method. Renders content and awaits any coroutine-function post-render callbacks on the live event loop. Async views and `@cache_response` on async methods use this path to keep rendering on the loop instead of bouncing through `async_to_sync`.
+
+
 
 ### Fixes
 - `set_response_cache_header` emitted the `X-Cache-status` header as `"CacheStatus.MISS"` instead of `"MISS"` on Python 3.11+ because `str(enum)` now includes the class name. The helper now writes the enum's `value` so the header matches the documented vocabulary (`HIT`, `MISS`, `STALE`, `BYPASS`, `REFRESH`).
 - `ArgsKeyField.get_key_payload` now uses `inspect.Signature.bind_partial` instead of `bind`, so invalidation handlers that supply only the fields named in `field_mapping` (for example, a view method whose signature includes `self` and `request`) no longer raise `TypeError: missing a required argument` and abort the rule.
-- `CachedResponseWrapper.render_view_response_sync` and `render_view_response_async` no longer pass `request` to `view.finalize_response` twice when the caller invokes the wrapped method with `request` as a keyword argument.
 
 ## [1.0.2] - 2026-05-26
 
