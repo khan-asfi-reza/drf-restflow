@@ -49,7 +49,7 @@ INSTALLED_APPS = [
 ]
 
 REST_FRAMEWORK = {
-    "DEFAULT_SCHEMA_CLASS": "restflow.spectacular.RestflowAutoSchema",
+    "DEFAULT_SCHEMA_CLASS": "restflow.spectacular.spectacular.RestflowAutoSchema",
 }
 
 SPECTACULAR_SETTINGS = {

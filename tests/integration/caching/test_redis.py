@@ -172,3 +172,74 @@ def test_invalidate_all_does_not_touch_other_wrappers():
     assert list(cache.iter_keys(f"{beta_prefix}*"))
 
 
+
+
+def test_delete_by_prefix_removes_partition_only_key():
+    calls = {"n": 0}
+
+    @cache_result(
+        {"fields": {"user": ArgsKeyField("user_id", partition=True)}},
+        ttl=60,
+    )
+    def get_user_data(user_id: int):
+        calls["n"] += 1
+        return f"user-{user_id}-call-{calls['n']}"
+
+    assert get_user_data(1) == "user-1-call-1"
+    assert get_user_data(1) == "user-1-call-1"
+    assert calls["n"] == 1
+
+    get_user_data.delete_by_prefix(1)
+
+    assert get_user_data(1) == "user-1-call-2"
+    assert calls["n"] == 2
+
+
+def test_delete_by_prefix_partition_only_key_does_not_touch_sibling():
+    calls = {"n": 0}
+
+    @cache_result(
+        {"fields": {"user": ArgsKeyField("user_id", partition=True)}},
+        ttl=60,
+    )
+    def get_user_data(user_id: int):
+        calls["n"] += 1
+        return f"user-{user_id}-call-{calls['n']}"
+
+    assert get_user_data(1) == "user-1-call-1"
+    assert get_user_data(10) == "user-10-call-2"
+    assert calls["n"] == 2
+
+    get_user_data.delete_by_prefix(1)
+
+    assert get_user_data(10) == "user-10-call-2"
+    assert get_user_data(1) == "user-1-call-3"
+    assert calls["n"] == 3
+
+
+def test_delete_by_prefix_targets_partition_field_passed_by_keyword():
+    from restflow.caching import KeyConstructor
+
+    calls = {"n": 0}
+
+    class K(KeyConstructor):
+        c = ArgsKeyField("c", partition=True)
+
+        class Meta:
+            namespace = "keyword_partition"
+
+    @cache_result(key_constructor=K, ttl=60)
+    def ax(a, b, c, d):
+        calls["n"] += 1
+        return f"{a}-{b}-{c}-{d}-call-{calls['n']}"
+
+    assert ax(1, 2, 3, 4) == "1-2-3-4-call-1"
+    assert ax(9, 9, 7, 9) == "9-9-7-9-call-2"
+    assert ax(1, 2, 3, 4) == "1-2-3-4-call-1"
+    assert calls["n"] == 2
+
+    ax.delete_by_prefix(c=3)
+
+    assert ax(1, 2, 3, 4) == "1-2-3-4-call-3"
+    assert ax(9, 9, 7, 9) == "9-9-7-9-call-2"
+    assert calls["n"] == 3

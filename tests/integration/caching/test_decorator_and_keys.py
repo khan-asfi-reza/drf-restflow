@@ -351,3 +351,40 @@ def test_default_key_constructor_includes_function_id_partition():
     assert f2() == "f2"
     assert f1() == "f1"
     assert f2() == "f2"
+
+
+def test_partition_only_key_starts_with_its_prefix():
+    class K(KeyConstructor):
+        user = ArgsKeyField("user_id", partition=True)
+
+        class Meta:
+            namespace = "partition_only"
+
+    constructor = K()
+
+    def fn(user_id):
+        return user_id
+
+    prefix = constructor.build_key_prefix(fn, (), {"user_id": 1})
+    full_key = constructor.generate_key(fn, (), {"user_id": 1})
+
+    assert full_key.startswith(prefix)
+
+
+def test_generated_key_starts_with_prefix_when_suffix_present():
+    class K(KeyConstructor):
+        user = ArgsKeyField("user_id", partition=True)
+        version = ConstantKeyField("v", "1")
+
+        class Meta:
+            namespace = "with_suffix"
+
+    constructor = K()
+
+    def fn(user_id):
+        return user_id
+
+    prefix = constructor.build_key_prefix(fn, (), {"user_id": 1})
+    full_key = constructor.generate_key(fn, (), {"user_id": 1})
+
+    assert full_key.startswith(prefix)

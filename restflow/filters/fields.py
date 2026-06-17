@@ -454,6 +454,12 @@ class BooleanField(
 ):
     lookup_categories = ["basic"]
 
+    def get_value(self, dictionary):
+        """Return empty for an absent parameter so a missing filter is skipped rather than coerced to False."""
+        if self.field_name not in dictionary:
+            return drf_fields.empty
+        return super().get_value(dictionary)
+
 
 class FloatField(
     Field,
@@ -539,6 +545,12 @@ class MultipleChoiceField(
     lookup_categories = [
         "basic",
     ]
+
+    def get_value(self, dictionary):
+        """Return empty for an absent parameter so a missing filter is skipped rather than coerced to an empty list."""
+        if self.field_name not in dictionary:
+            return drf_fields.empty
+        return super().get_value(dictionary)
 
     def to_internal_value(self, data):
         """Convert input data to internal Python representation. Splits comma-separated values whether they arrive as a single string or as elements of a list."""

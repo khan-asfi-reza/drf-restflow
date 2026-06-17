@@ -1,4 +1,4 @@
-__version__ = "1.1.0"
+__version__ = "1.2.0"
 __title__ = "Restflow"
 __author__ = "Khan Asfi Reza"
 __license__ = "BSD 3-Clause"

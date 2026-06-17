@@ -266,11 +266,12 @@ class KeyConstructor(metaclass=KeyConstructorMetaClass):
         return hash_string(suffix) if should_hash else suffix
 
     def generate_key(self, func: Callable[P, T], args, kwargs) -> str:
-        """Build and return the full cache key for the given call."""
+        """
+        Build and return the full cache key for the given call.
+        """
         prefix = self.build_key_prefix(func, args, kwargs)
         suffix = self.build_key_suffix(func, args, kwargs)
-        cache_key = f"{prefix}{suffix}"
-        return cache_key.removesuffix("::")
+        return f"{prefix}{suffix}"
 
     @staticmethod
     def get_function_identifier(func: Callable[P, T]):

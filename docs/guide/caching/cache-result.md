@@ -119,6 +119,17 @@ Wipes every cache entry that shares the partition prefix derived from
 the given arguments. Useful when one logical change should drop many
 cache entries, for example dropping every cached page for a user.
 
+!!! tip "Pass partition values as keyword arguments"
+    `delete_by_prefix()`, `delete_cache()`, and `refresh()` bind their
+    arguments to the wrapped function's signature, exactly as a normal
+    call would. A positional value binds to the first parameter, so if
+    the partition field reads a later parameter the prefix is built from
+    the wrong value and nothing matches. Pass the partition values by
+    keyword to stay safe. For `get_user_payload(user_id)`, call
+    `delete_by_prefix(user_id=42)` rather than `delete_by_prefix(42)`.
+    Only the partition fields need a value, the remaining parameters can
+    be left out.
+
 !!! warning "Cache backend requirement"
     `delete_by_prefix()` uses `delete_pattern`, which Django's
     local-memory and database cache backends do not implement. A

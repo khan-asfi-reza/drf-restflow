@@ -4,6 +4,7 @@ from typing import Literal, Optional
 
 import pytest
 from django.core.exceptions import FieldDoesNotExist
+from django.http import QueryDict
 from rest_framework.test import APIRequestFactory
 
 from restflow.filters.fields import (
@@ -13,6 +14,7 @@ from restflow.filters.fields import (
     IntegerField,
     IPAddress,
     ListField,
+    MultipleChoiceField,
     OrderField,
     RelatedField,
     StringField,
@@ -987,3 +989,84 @@ def test_array_field_extracts_to_list_field_with_pg_array_lookups():
     assert "overlaps" in field.lookups
     assert "contained_by" in field.lookups
 
+
+
+@pytest.mark.django_db
+def test_unset_boolean_filter_from_query_params_keeps_all_rows():
+    SampleModel.objects.create(boolean_field=True)
+    SampleModel.objects.create(boolean_field=False)
+
+    class TestFilterSet(FilterSet):
+        boolean_field = BooleanField(required=False)
+
+    filterset = TestFilterSet(data=QueryDict(""))
+    filtered_qs = filterset.filter_queryset(SampleModel.objects.all())
+
+    assert filtered_qs.count() == 2
+
+
+@pytest.mark.django_db
+def test_set_boolean_filter_from_query_params_applies():
+    SampleModel.objects.create(boolean_field=True)
+    SampleModel.objects.create(boolean_field=False)
+
+    class TestFilterSet(FilterSet):
+        boolean_field = BooleanField(required=False)
+
+    filterset = TestFilterSet(data=QueryDict("boolean_field=true"))
+    filtered_qs = filterset.filter_queryset(SampleModel.objects.all())
+
+    assert filtered_qs.count() == 1
+    assert filtered_qs.first().boolean_field is True
+
+
+@pytest.mark.django_db
+def test_unset_multiple_choice_filter_from_query_params_keeps_all_rows():
+    SampleModel.objects.create(choice_field="a")
+    SampleModel.objects.create(choice_field="b")
+    SampleModel.objects.create(choice_field="c")
+
+    class TestFilterSet(FilterSet):
+        choice_field = MultipleChoiceField(
+            choices=[("a", "A"), ("b", "B"), ("c", "C")],
+            filter_by="choice_field__in",
+        )
+
+    filterset = TestFilterSet(data=QueryDict(""))
+    filtered_qs = filterset.filter_queryset(SampleModel.objects.all())
+
+    assert filtered_qs.count() == 3
+
+
+@pytest.mark.django_db
+def test_set_multiple_choice_filter_from_query_params_applies():
+    SampleModel.objects.create(choice_field="a")
+    SampleModel.objects.create(choice_field="b")
+    SampleModel.objects.create(choice_field="c")
+
+    class TestFilterSet(FilterSet):
+        choice_field = MultipleChoiceField(
+            choices=[("a", "A"), ("b", "B"), ("c", "C")],
+            filter_by="choice_field__in",
+        )
+
+    filterset = TestFilterSet(data=QueryDict("choice_field=a,b"))
+    filtered_qs = filterset.filter_queryset(SampleModel.objects.all())
+
+    assert filtered_qs.count() == 2
+    assert set(filtered_qs.values_list("choice_field", flat=True)) == {"a", "b"}
+
+
+def test_unset_filters_from_query_params_are_absent_from_validated_data():
+    class TestFilterSet(FilterSet):
+        is_active = BooleanField(required=False)
+        kinds = MultipleChoiceField(
+            choices=[("a", "A"), ("b", "B")],
+            filter_by="kind__in",
+        )
+        ordering = OrderField(fields=[("created", "created_at")])
+
+    filterset = TestFilterSet(data=QueryDict(""))
+
+    assert filterset.is_valid()
+    assert filterset.validated_data == {}
