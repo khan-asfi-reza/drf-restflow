@@ -4581,6 +4581,18 @@ backend.</p>
 <p>Wipes every cache entry that shares the partition prefix derived from
 the given arguments. Useful when one logical change should drop many
 cache entries, for example dropping every cached page for a user.</p>
+<div class="admonition tip">
+<p class="admonition-title">Pass partition values as keyword arguments</p>
+<p><code>delete_by_prefix()</code>, <code>delete_cache()</code>, and <code>refresh()</code> bind their
+arguments to the wrapped function's signature, exactly as a normal
+call would. A positional value binds to the first parameter, so if
+the partition field reads a later parameter the prefix is built from
+the wrong value and nothing matches. Pass the partition values by
+keyword to stay safe. For <code>get_user_payload(user_id)</code>, call
+<code>delete_by_prefix(user_id=42)</code> rather than <code>delete_by_prefix(42)</code>.
+Only the partition fields need a value, the remaining parameters can
+be left out.</p>
+</div>
 <div class="admonition warning">
 <p class="admonition-title">Cache backend requirement</p>
 <p><code>delete_by_prefix()</code> uses <code>delete_pattern</code>, which Django's
