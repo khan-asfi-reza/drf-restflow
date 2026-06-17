@@ -5,6 +5,15 @@ All notable changes to drf-restflow will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0] - 2026-06-18
+
+### Fixes
+- Filter fields no longer invent values for parameters the client never sent. `BooleanField` and `MultipleChoiceField` (and `OrderField`) returned `False` and `[]` for an absent key because `request.query_params` is a `QueryDict` and DRF treats it as HTML form input. A missing parameter now skips the field, so a bare list request no longer applies a `field=False` or `field__in=[]` filter that drops rows it should keep.
+- `delete_by_prefix()` now clears keys built from a partition-only `KeyConstructor`. `generate_key` had stripped the trailing separator from the stored key while the delete pattern kept it, so the prefix never matched. The separator is preserved on both sides, and a value like `user:42` still does not match `user:420`.
+
+### Docs
+- Note that `delete_by_prefix()`, `delete_cache()`, and `refresh()` bind arguments to the wrapped function's signature. Pass partition values by keyword so a positional value cannot bind to the wrong parameter.
+
 ## [1.1.0] - 2026-05-26
 
 ### Added
