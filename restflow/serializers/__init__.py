@@ -1,4 +1,4 @@
-from restflow.helpers import Email, IPAddress
+from restflow.helpers import Email, IPAddress, NotRequired
 from restflow.serializers.fields import (
     DecimalField,
     Field,
@@ -21,6 +21,7 @@ __all__ = [
     "IPAddress",
     "InlineSerializer",
     "ModelSerializer",
+    "NotRequired",
     "Serializer",
     "SerializerFieldMap",
     "ValidatedData",

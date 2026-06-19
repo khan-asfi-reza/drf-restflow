@@ -10,7 +10,7 @@ required Django setup, and the optional extras for each feature.
 
 ## Requirements
 
-- Python 3.10 or higher
+- Python 3.11 or higher
 - Django 3.2 or higher
 - Django REST Framework 3.14 or higher
 
@@ -402,7 +402,7 @@ uv add 'drf-restflow[postgres-psycopg3]'
 
 | Python | Django | DRF |
 | --- | --- | --- |
-| 3.10+ | 3.2+ | 3.14+ |
+| 3.11+ | 3.2+ | 3.14+ |
 
 ## Next steps
 

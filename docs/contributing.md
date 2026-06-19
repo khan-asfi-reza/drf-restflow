@@ -47,7 +47,7 @@ The library covers:
 
 ### Prerequisites
 
-- Python 3.10 or higher
+- Python 3.11 or higher
 - Git
 - Familiarity with Django and Django REST Framework
 

@@ -5,6 +5,7 @@ from typing import (
     Any,
     Literal,
     NewType,
+    NotRequired,
     Union,
     get_args,
     get_origin,
@@ -95,11 +96,29 @@ def resolve_field_from_type(
     allow_null_on_optional: bool = False,
     **field_kwargs,
 ):
-    """Resolve a Python type annotation to a field instance, dispatching nested, Optional, list, and Literal forms."""
+    """Resolve a Python type annotation to a field instance, dispatching nested, Optional, NotRequired, list, and Literal forms."""
     if nested_predicate and nested_predicate(data_type):
         return nested_factory(data_type, field_kwargs)
 
     origin = get_origin(data_type)
+
+    if origin is NotRequired:
+        # NotRequired[T] marks the key as optional in the input without
+        # making the value nullable. Set required=False and resolve the inner type.
+        field_kwargs.setdefault("required", False)
+        return resolve_field_from_type(
+            get_args(data_type)[0],
+            type_map=type_map,
+            field_name=field_name,
+            list_field_class=list_field_class,
+            list_field_hook=list_field_hook,
+            choice_field_class=choice_field_class,
+            nested_predicate=nested_predicate,
+            nested_factory=nested_factory,
+            error_message=error_message,
+            allow_null_on_optional=allow_null_on_optional,
+            **field_kwargs,
+        )
 
     if origin is Annotated:
         # Resolves nested annotation.

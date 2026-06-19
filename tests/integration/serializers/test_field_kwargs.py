@@ -8,7 +8,7 @@ from rest_framework import fields as drf_fields
 from rest_framework.exceptions import ValidationError
 
 from restflow.helpers import IPAddress
-from restflow.serializers import Email, Field, Serializer
+from restflow.serializers import Email, Field, NotRequired, Serializer
 
 
 class TestIntegerFieldKwargs:
@@ -490,6 +490,64 @@ class TestOptionalKwargs:
         assert S(data={"tags": None}).is_valid()
         assert not S(data={"tags": []}).is_valid()
         assert S(data={"tags": ["a", "b"]}).is_valid()
+
+
+class TestNotRequiredKwargs:
+    def test_not_required_str_is_optional_but_not_nullable(self):
+        class S(Serializer):
+            nick: NotRequired[str]
+
+        f = S().fields["nick"]
+        assert f.required is False
+        assert f.allow_null is False
+
+    def test_not_required_omitting_key_validates(self):
+        class S(Serializer):
+            nick: NotRequired[str]
+
+        assert S(data={}).is_valid()
+
+    def test_not_required_rejects_null_when_not_optional(self):
+        class S(Serializer):
+            nick: NotRequired[str]
+
+        assert not S(data={"nick": None}).is_valid()
+
+    def test_not_required_optional_allows_null(self):
+        class S(Serializer):
+            bio: NotRequired[str | None]
+
+        f = S().fields["bio"]
+        assert f.required is False
+        assert f.allow_null is True
+        assert S(data={"bio": None}).is_valid()
+
+    def test_not_required_list(self):
+        class S(Serializer):
+            tags: NotRequired[list[str]]
+
+        f = S().fields["tags"]
+        assert isinstance(f, drf_fields.ListField)
+        assert f.required is False
+        assert S(data={}).is_valid()
+
+    def test_not_required_with_field_kwargs(self):
+        class S(Serializer):
+            secret: NotRequired[str] = Field(write_only=True, min_length=4)
+
+        f = S().fields["secret"]
+        assert f.required is False
+        assert f.write_only is True
+        assert not S(data={"secret": "ab"}).is_valid()
+        assert S(data={"secret": "abcd"}).is_valid()
+
+    def test_explicit_required_true_overrides_not_required(self):
+        class S(Serializer):
+            x: NotRequired[str] = Field(required=True)
+
+        f = S().fields["x"]
+        assert f.required is True
+        assert not S(data={}).is_valid()
 
 
 class TestCombinedKwargs:

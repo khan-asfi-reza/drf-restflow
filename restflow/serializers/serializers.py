@@ -10,7 +10,6 @@ from rest_framework.fields import SkipField, empty, get_error_detail
 from rest_framework.serializers import raise_errors_on_nested_writes
 from rest_framework.settings import api_settings
 from rest_framework.utils import model_meta
-from typing_extensions import dataclass_transform
 
 from restflow.helpers import (
     RESERVED_SERIALIZER_ATTRS,
@@ -71,7 +70,6 @@ def build_annotated_fields(
     return result
 
 
-@dataclass_transform(field_specifiers=(Field,), eq_default=False)
 class SerializerMetaClass(drf_serializers.SerializerMetaclass):
     """Metaclass that walks type annotations to populate _declared_fields, ordering inherited then annotated then explicit."""
 
@@ -354,7 +352,6 @@ class Serializer(
     """
 
 
-@dataclass_transform(field_specifiers=(Field,), eq_default=False)
 class ModelSerializerMetaClass(SerializerMetaClass):
     """Metaclass that auto-includes annotated names into Meta.fields so the user does not have to list them twice."""
 

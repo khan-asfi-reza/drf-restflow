@@ -29,6 +29,7 @@ from restflow.filters.fields import (
     RelatedField,
     StringField,
     TimeField,
+    bound_label,
     build_filter_field,
     extract_model_fields,
 )
@@ -517,13 +518,29 @@ class FilterMetaClass(SerializerMetaclass):
             items = [(lookup, None) for lookup in lookups]
 
         for alias, mapped_value in items:
-            orm_lookup = (
-                mapped_value if isinstance(mapped_value, str) else alias
-            )
+            if isinstance(mapped_value, dict):
+                orm_lookup = mapped_value.get("lookup", alias)
+                explicit_help = mapped_value.get("help_text")
+            elif isinstance(mapped_value, str):
+                orm_lookup, explicit_help = mapped_value, None
+            else:
+                orm_lookup, explicit_help = alias, None
+
+            parent_help = getattr(field, "help_text", None)
+            if explicit_help is not None:
+                variant_help = explicit_help
+            elif parent_help:
+                variant_help = f"{parent_help} ({bound_label(orm_lookup)})"
+            else:
+                variant_help = None
 
             variant_name = f"{field_name}{separator}{alias}"
             variant_expr = f"{field.db_field}{LOOKUP_SEP}{orm_lookup}"
-            field_kwargs = {"filter_by": variant_expr, "lookups": []}
+            field_kwargs = {
+                "filter_by": variant_expr,
+                "lookups": [],
+                "help_text": variant_help,
+            }
 
             field_class = LOOKUP_DEFAULT_FIELD.get(orm_lookup)
             cloned_class = field.clone(**field_kwargs)
@@ -535,6 +552,8 @@ class FilterMetaClass(SerializerMetaclass):
                 field_class(**field_kwargs) if field_class else cloned_class
             )
             lookup_field._base_field_name = field_name
+            if variant_help is not None:
+                lookup_field._explicit_help_text = True
             variants.append((variant_name, lookup_field))
 
         return variants
@@ -550,6 +569,9 @@ class FilterMetaClass(SerializerMetaclass):
             negated = field.clone(negate=True)
             negated._base_field_name = getattr(
                 field, "_base_field_name", field_name
+            )
+            negated._explicit_help_text = getattr(
+                field, "_explicit_help_text", False
             )
             return [(negation_name, negated)]
         return []

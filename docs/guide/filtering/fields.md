@@ -525,6 +525,33 @@ class ProductFilterSet(FilterSet):
 #            price_min -> queryset.filter(price__gte=value)
 ```
 
+### Per-lookup help text
+
+Each alias value may instead be a dict that carries the ORM lookup and an
+optional `help_text`. This lets each generated variant document itself
+independently in the OpenAPI schema.
+
+```python
+class ProductFilterSet(FilterSet):
+    price = IntegerField(
+        lookups={
+            "min": {"lookup": "gte", "help_text": "Lowest acceptable price"},
+            "max": {"lookup": "lte"},
+        },
+        lookup_separator="_",
+        help_text="Product price",
+    )
+```
+
+A variant resolves its help text in three steps:
+
+- An explicit per-lookup `help_text` is used as is, so `price_min` reads
+   "Lowest acceptable price".
+- Otherwise, when the field has a `help_text`, the variant appends a bound
+   label, so `price_max` reads "Product price (Inclusive Upper Bound)".
+- Otherwise the schema falls back to an auto-generated verb hint such as
+   "price is less than or equal to".
+
 ## Negation
 
 Every filter accepts a `!` suffix.

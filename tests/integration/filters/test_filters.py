@@ -804,6 +804,32 @@ def test_alias_lookups_generate_named_variants():
     assert "integer_field_min!" in fs_fields
 
 
+def test_per_lookup_help_text_resolves_in_three_tiers():
+    class TestFilterSet(FilterSet):
+        a_val = IntegerField(
+            lookups={
+                "min": {"lookup": "gte", "help_text": "Minimum A value"},
+                "max": {"lookup": "lte"},
+            },
+            lookup_separator="_",
+            help_text="A value",
+        )
+
+    fs_fields = TestFilterSet().fields
+    assert fs_fields["a_val_min"].help_text == "Minimum A value"
+    assert fs_fields["a_val_max"].help_text == "A value (Inclusive Upper Bound)"
+    assert fs_fields["a_val_min"].filter_by == "a_val__gte"
+    assert fs_fields["a_val_max"].filter_by == "a_val__lte"
+
+
+def test_per_lookup_help_text_falls_back_to_none_without_parent_help():
+    class TestFilterSet(FilterSet):
+        a_val = IntegerField(lookups={"max": "lte"}, lookup_separator="_")
+
+    fs_fields = TestFilterSet().fields
+    assert fs_fields["a_val_max"].help_text is None
+
+
 def test_alias_lookups_default_separator_is_double_underscore():
     class TestFilterSet(FilterSet):
         integer_field = IntegerField(lookups={"max": "lte"})

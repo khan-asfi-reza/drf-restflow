@@ -71,7 +71,47 @@ LOOKUP_SET = set(DjangoField.get_lookups().keys())
 
 ALL_FIELDS = "__all__"
 
-LookupsType = str | list[str] | tuple[str] | dict[str, dict[str, Any]] | None
+LOOKUP_BOUND_LABELS = {
+    "exact": "Exact Match",
+    "iexact": "Exact Match (Case-Insensitive)",
+    "contains": "Substring Match",
+    "icontains": "Substring Match (Case-Insensitive)",
+    "startswith": "Prefix Match",
+    "istartswith": "Prefix Match (Case-Insensitive)",
+    "endswith": "Suffix Match",
+    "iendswith": "Suffix Match (Case-Insensitive)",
+    "gt": "Exclusive Lower Bound",
+    "gte": "Inclusive Lower Bound",
+    "lt": "Exclusive Upper Bound",
+    "lte": "Inclusive Upper Bound",
+    "in": "Value Set Membership",
+    "range": "Inclusive Range",
+    "isnull": "Null Check",
+    "regex": "Regex Match",
+    "iregex": "Regex Match (Case-Insensitive)",
+    "date": "Date Component",
+    "year": "Year Component",
+    "month": "Month Component",
+    "day": "Day Component",
+    "week": "Week Component",
+    "week_day": "Weekday Component",
+    "quarter": "Quarter Component",
+    "hour": "Hour Component",
+    "minute": "Minute Component",
+    "second": "Second Component",
+    "search": "Full-Text Search",
+    "trigram_similar": "Trigram Similarity",
+    "unaccent": "Accent-Insensitive Match",
+    "overlaps": "Range Overlap",
+    "contained_by": "Contained By",
+}
+
+
+def bound_label(orm_lookup: str) -> str:
+    """Return a professional display label for an ORM lookup, title-casing unknown ones."""
+    return LOOKUP_BOUND_LABELS.get(orm_lookup, orm_lookup.replace("_", " ").title())
+
+LookupsType = str | list[str] | tuple[str] | dict[str, str | dict[str, Any]] | None
 FieldsType =  list[str] | tuple[str] | str
 
 
@@ -191,6 +231,15 @@ class Field(drf_fields.Field):
                 example: {"max": "lte", "min": "gte"}.
                 Used together with `lookup_separator` to control how variants are
                 named on the query string. Keys are NOT expanded via lookup categories.
+            - Alias dict with per-lookup config, where each value is a dict carrying
+                the ORM lookup and an optional help text,
+                example: {"min": {"lookup": "gte", "help_text": "Minimum price"}}.
+
+            Each generated variant resolves its help text in three steps. An explicit
+            per-lookup help_text is used as is. Otherwise, when the parent field has a
+            help_text, the variant gets "parent help (Bound Label)", for example
+            "A value (Inclusive Lower Bound)". Otherwise the schema falls back to an
+            auto-generated verb hint.
 
         lookup_separator: Separator placed between the field name and a lookup
             variant suffix when building variant names. When `None` (the default),
@@ -320,6 +369,14 @@ class Field(drf_fields.Field):
                 _type, field_name=field_name, **default_kwargs
             )
         return self.__class__(**default_kwargs)
+
+    def __deepcopy__(self, memo):
+        """Copy the field for per-instance binding while preserving variant metadata that DRF's reconstruction would otherwise drop."""
+        new = super().__deepcopy__(memo)
+        for attr in ("_base_field_name", "_explicit_help_text"):
+            if hasattr(self, attr):
+                setattr(new, attr, getattr(self, attr))
+        return new
 
     def ensure_db_field(self, db_field: str):
         """Set db_field to the supplied default when neither filter_by, method, nor db_field is set."""
