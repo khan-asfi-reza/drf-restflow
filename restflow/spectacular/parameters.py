@@ -108,6 +108,9 @@ def get_field_description(
         explicit = label
 
     is_negated = field_name.endswith("!")
+    if explicit and getattr(field, "_explicit_help_text", False):
+        return f"exclude where {explicit}" if is_negated else explicit
+
     name_no_bang = field_name.removesuffix("!")
     base = getattr(field, "_base_field_name", None)
     if not base and separator and separator in name_no_bang:

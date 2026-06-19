@@ -5,7 +5,7 @@ readme = "README.md"
 license = "BSD-3-Clause"
 license-files = ["LICENSE"]
 dynamic = [ "version" ]
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 authors = [
     {name = "Khan Asfi Reza", email = "mail@khanasfireza.dev"},
 ]
@@ -34,7 +34,6 @@ classifiers = [
     "Operating System :: OS Independent",
     "Programming Language :: Python",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
@@ -47,7 +46,6 @@ dependencies = [
     "django>=3.2",
     "djangorestframework>=3.14",
     "pyjwt>=2.8",
-    "typing-extensions>=4.15.0",
 ]
 
 [project.optional-dependencies]
@@ -168,7 +166,7 @@ exclude_lines = [
 ]
 
 [tool.ruff]
-target-version = "py310"
+target-version = "py311"
 line-length = 80
 exclude = [
     ".git",

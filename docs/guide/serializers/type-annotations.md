@@ -91,6 +91,33 @@ class StrictOptional(Serializer):
     bio: str | None = Field(required=True)  # required=True wins
 ```
 
+## NotRequired (required=False without allow_null)
+
+`Optional[T]` and `T | None` make a field both optional and nullable.
+When you want a field that may be left out of the input but must not be
+null when it is present, wrap the type in `NotRequired[T]`. It sets
+`required=False` and leaves `allow_null` untouched.
+
+```python
+from restflow.serializers import NotRequired, Serializer
+
+
+class SignupSer(Serializer):
+    email: str
+    nickname: NotRequired[str]        # optional key, but cannot be null
+    referral: NotRequired[str | None] # optional key and nullable
+```
+
+`NotRequired` is the same marker used by `typing.TypedDict`, re-exported
+for convenience. It composes with the other forms: `NotRequired[T | None]`
+is optional and nullable, and an explicit `Field(required=True)` still
+takes precedence.
+
+```python
+class Override(Serializer):
+    name: NotRequired[str] = Field(required=True)  # required=True wins
+```
+
 ## Literal (ChoiceField)
 
 A `Literal` annotation produces a DRF `ChoiceField` whose `choices`
@@ -372,9 +399,11 @@ class UserSer(Serializer):
     nickname: str = Field(required=False)
 ```
 
-The one exception is `Optional[T]` and `T | None`: the union with
-`None` triggers `required=False` and `allow_null=True` automatically,
-so `bio: str | None` is already optional.
+Two annotation forms make a field optional without a `Field` sentinel.
+`Optional[T]` and `T | None` trigger `required=False` and
+`allow_null=True`, so `bio: str | None` is already optional.
+`NotRequired[T]` triggers `required=False` only, so `nickname:
+NotRequired[str]` may be left out but cannot be null.
 
 `Field(default=...)` sets DRF's `default=` argument, which means the
 field is allowed to be missing from the input and is filled in with

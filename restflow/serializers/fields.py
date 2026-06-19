@@ -2,7 +2,7 @@ import datetime
 import decimal
 import inspect
 import uuid
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from rest_framework import fields as drf_fields
 from rest_framework.serializers import BaseSerializer
@@ -16,10 +16,42 @@ from restflow.helpers import (
 
 SERIALIZER_TYPE_ASSERTION_ERROR = "annotation must be a supported type"
 
+if TYPE_CHECKING:
+
+    def Field(**kwargs: Any) -> Any:
+        """Sentinel field that carries DRF kwargs to an annotated field while letting the annotation pick the final field class.
+
+        Example::
+
+            class Ser(Serializer):
+                email: Email = Field(write_only=True)
+        """
+
+else:
+
+    class Field:
+        """Sentinel field that carries DRF kwargs to an annotated field while letting the annotation pick the final field class.
+
+        Example::
+
+            class Ser(Serializer):
+                email: Email = Field(write_only=True)
+        """
+
+        def __init__(self, **kwargs):
+            """Capture the kwargs so the metaclass can clone them onto the annotation-resolved field."""
+            self.field_kwargs = dict(kwargs)
+
+        def clone(self, _type=None, field_name=None, **inner_kwargs):
+            """Return a real field for the given type annotation, merging the captured kwargs with inner_kwargs."""
+            kwargs = {**self.field_kwargs, **inner_kwargs}
+            if _type is not None:
+                return get_field_from_type(_type, field_name=field_name, **kwargs)
+            return self.__class__(**kwargs)
+
 
 def is_serializer_subclass(t) -> bool:
     return inspect.isclass(t) and issubclass(t, BaseSerializer)
-
 
 def build_nested_serializer(t, kwargs: dict):
     return t(**kwargs)
@@ -34,26 +66,6 @@ class DecimalField(drf_fields.DecimalField):
 class BlankableCharField(drf_fields.CharField):
     def __init__(self, **kwargs):
         super().__init__(allow_blank=True, **kwargs)
-
-class Field:
-    """Sentinel field that carries DRF kwargs to an annotated field while letting the annotation pick the final field class.
-
-    Example::
-
-        class Ser(Serializer):
-            email: Email = Field(write_only=True)
-    """
-
-    def __init__(self, **kwargs):
-        """Capture the kwargs so the metaclass can clone them onto the annotation-resolved field."""
-        self.field_kwargs = dict(kwargs)
-
-    def clone(self, _type=None, field_name=None, **inner_kwargs):
-        """Return a real field for the given type annotation, merging the captured kwargs with inner_kwargs."""
-        kwargs = {**self.field_kwargs, **inner_kwargs}
-        if _type is not None:
-            return get_field_from_type(_type, field_name=field_name, **kwargs)
-        return self.__class__(**kwargs)
 
 
 

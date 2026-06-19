@@ -5,6 +5,47 @@ All notable changes to drf-restflow will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 
+
+### Added
+- `NotRequired[T]` annotation marker for serializer fields. It sets `required=False` without touching `allow_null`, so a key may be left out of the input but must not be null when present. This complements `Optional[T]` / `T | None`, which mark a field both optional and nullable. The marker is re-exported from `restflow.serializers`, composes with the other forms (`NotRequired[T | None]` is optional and nullable), and an explicit `Field(required=True)` still takes precedence.
+
+  ```python
+  from restflow.serializers import NotRequired, Serializer
+
+  class SignupSer(Serializer):
+      email: str
+      nickname: NotRequired[str]         # optional key, not nullable
+      referral: NotRequired[str | None]  # optional key and nullable
+  ```
+
+- Per-lookup help text for filter lookup variants. A lookup alias can map to a dict carrying the ORM `lookup` and an optional `help_text`, so each generated variant can describe itself in the OpenAPI schema.
+
+  ```python
+  class ProductFilter(FilterSet):
+      price = IntegerField(
+          help_text="Product price",
+          lookups={
+              "min": {"lookup": "gte", "help_text": "Minimum price"},
+              "max": {"lookup": "lte"},
+          },
+      )
+  ```
+
+  Each variant resolves its description in three steps. An explicit per-lookup `help_text` is used as is. Otherwise, when the parent field has a `help_text`, the variant gets "parent help (Bound Label)", for example "Product price (Inclusive Upper Bound)". Otherwise it falls back to an auto-generated verb hint. Negated (`!`) variants reuse the same description as "exclude where ...".
+
+### Breaking
+- Dropped Python 3.10 support. The minimum supported version is now Python 3.11.
+
+## [1.2.0] - 2026-06-18
+
+### Fixes
+- Filter fields no longer invent values for parameters the client never sent. `BooleanField` and `MultipleChoiceField` (and `OrderField`) returned `False` and `[]` for an absent key because `request.query_params` is a `QueryDict` and DRF treats it as HTML form input. A missing parameter now skips the field, so a bare list request no longer applies a `field=False` or `field__in=[]` filter that drops rows it should keep.
+- `delete_by_prefix()` now clears keys built from a partition-only `KeyConstructor`. `generate_key` had stripped the trailing separator from the stored key while the delete pattern kept it, so the prefix never matched. The separator is preserved on both sides, and a value like `user:42` still does not match `user:420`.
+
+### Docs
+- Note that `delete_by_prefix()`, `delete_cache()`, and `refresh()` bind arguments to the wrapped function's signature. Pass partition values by keyword so a positional value cannot bind to the wrong parameter.
+
 ## [1.1.0] - 2026-05-26
 
 ### Added
