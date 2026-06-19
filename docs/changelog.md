@@ -5,7 +5,7 @@ All notable changes to drf-restflow will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## 
 
 ### Added
 - `NotRequired[T]` annotation marker for serializer fields. It sets `required=False` without touching `allow_null`, so a key may be left out of the input but must not be null when present. This complements `Optional[T]` / `T | None`, which mark a field both optional and nullable. The marker is re-exported from `restflow.serializers`, composes with the other forms (`NotRequired[T | None]` is optional and nullable), and an explicit `Field(required=True)` still takes precedence.
