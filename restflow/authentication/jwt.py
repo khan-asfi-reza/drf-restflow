@@ -1,7 +1,7 @@
 import hashlib
 import secrets
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import jwt as pyjwt
 from django.contrib.auth import get_user_model
@@ -49,7 +49,7 @@ def get_verifying_key():
 def get_now_time() -> datetime:
     # Using custom datetime.now with utc, instead of django's timezone.now
     # Since custom timezone for a django config can be different, causing corner cases.
-    return datetime.now(tz=timezone.utc)
+    return datetime.now(tz=UTC)
 
 
 def validate_algorithm(algorithm: str) -> None:
@@ -423,7 +423,7 @@ class ModelBlacklistBackend(BlacklistBackend):
         BlacklistedToken = get_blacklisted_token_model()
         BlacklistedToken.objects.get_or_create(
             jti=jti,
-            defaults={"expires_at": datetime.fromtimestamp(expires_at, tz=timezone.utc)},
+            defaults={"expires_at": datetime.fromtimestamp(expires_at, tz=UTC)},
         )
 
     def _is_blacklisted_sync(self, jti: str) -> bool:
@@ -440,7 +440,7 @@ class ModelBlacklistBackend(BlacklistBackend):
         BlacklistedToken = get_blacklisted_token_model()
         await BlacklistedToken.objects.aget_or_create(
             jti=jti,
-            defaults={"expires_at": datetime.fromtimestamp(expires_at, tz=timezone.utc)},
+            defaults={"expires_at": datetime.fromtimestamp(expires_at, tz=UTC)},
         )
 
     async def ais_blacklisted(self, jti: str) -> bool:

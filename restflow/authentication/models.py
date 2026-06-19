@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from django.db import models
 
@@ -26,7 +26,7 @@ class BlacklistedToken(models.Model):
     def cleanup_expired(cls) -> int:
         """Deletes all rows whose expires_at is in the past and returns the deleted count."""
         deleted, _ = cls.objects.filter(
-            expires_at__lt=datetime.now(tz=timezone.utc)
+            expires_at__lt=datetime.now(tz=UTC)
         ).delete()
         return deleted
 
@@ -34,6 +34,6 @@ class BlacklistedToken(models.Model):
     async def acleanup_expired(cls) -> int:
         """Async variant of cleanup_expired."""
         deleted, _ = await cls.objects.filter(
-            expires_at__lt=datetime.now(tz=timezone.utc)
+            expires_at__lt=datetime.now(tz=UTC)
         ).adelete()
         return deleted
