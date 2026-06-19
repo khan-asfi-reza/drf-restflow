@@ -4190,7 +4190,15 @@ as separate fields. Can be:
 - Alias dict mapping variant suffix -&gt; ORM lookup,
     example: {"max": "lte", "min": "gte"}.
     Used together with <code>lookup_separator</code> to control how variants are
-    named on the query string. Keys are NOT expanded via lookup categories.</p>
+    named on the query string. Keys are NOT expanded via lookup categories.
+- Alias dict with per-lookup config, where each value is a dict carrying
+    the ORM lookup and an optional help text,
+    example: {"min": {"lookup": "gte", "help_text": "Minimum price"}}.</p>
+<p>Each generated variant resolves its help text in three steps. An explicit
+per-lookup help_text is used as is. Otherwise, when the parent field has a
+help_text, the variant gets "parent help (Bound Label)", for example
+"A value (Inclusive Lower Bound)". Otherwise the schema falls back to an
+auto-generated verb hint.</p>
               </div>
             </td>
             <td>
