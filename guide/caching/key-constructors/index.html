@@ -974,6 +974,28 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#wiping-every-function-that-shares-a-constructor" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Wiping every function that shares a constructor
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#clearing-old-versions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Clearing old versions
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#where-to-next" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -4270,6 +4292,28 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#wiping-every-function-that-shares-a-constructor" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Wiping every function that shares a constructor
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#clearing-old-versions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Clearing old versions
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#where-to-next" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -4532,6 +4576,51 @@ or sort orders.</p>
 <a id="__codelineno-10-14" name="__codelineno-10-14" href="#__codelineno-10-14"></a><span class="c1"># both share the same prefix `restflow.cache.user_data::user_id:42`</span>
 <a id="__codelineno-10-15" name="__codelineno-10-15" href="#__codelineno-10-15"></a><span class="c1"># so `delete_by_prefix(user_id=42)` will drop both</span>
 </code></pre></div>
+<h2 id="wiping-every-function-that-shares-a-constructor">Wiping every function that shares a constructor<a class="headerlink" href="#wiping-every-function-that-shares-a-constructor" title="Permanent link">&para;</a></h2>
+<p><code>delete_by_prefix()</code> and <code>invalidate_all()</code> act on a single wrapped
+function. When several functions share one constructor, the constructor
+itself can fan the same invalidation out across all of them with
+<code>wipe()</code>.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a><span class="c1"># drop the user_id=42 partition on every function using BaseKeyConstructor</span>
+<a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a><span class="n">BaseKeyConstructor</span><span class="o">.</span><span class="n">wipe</span><span class="p">(</span><span class="n">user_id</span><span class="o">=</span><span class="mi">42</span><span class="p">)</span>
+<a id="__codelineno-11-3" name="__codelineno-11-3" href="#__codelineno-11-3"></a>
+<a id="__codelineno-11-4" name="__codelineno-11-4" href="#__codelineno-11-4"></a><span class="c1"># drop every entry every function using it has written</span>
+<a id="__codelineno-11-5" name="__codelineno-11-5" href="#__codelineno-11-5"></a><span class="n">BaseKeyConstructor</span><span class="o">.</span><span class="n">wipe</span><span class="p">()</span>
+</code></pre></div>
+<p>Arguments are passed just like a normal call and bound to each
+function's own signature, so pass partition values by keyword. With no
+arguments, <code>wipe()</code> clears every partition for each function. Use
+<code>awipe()</code> for async functions.</p>
+<p>A function is reachable by <code>wipe()</code> once its <code>@cache_result</code> or
+<code>@cache_response</code> decorator has run, which happens when its module is
+imported. Under Django all apps load before requests are served, so the
+set is complete at runtime. A script that wipes before importing the
+modules holding the cached functions reaches only what it has imported.</p>
+<div class="admonition warning">
+<p class="admonition-title">Cache backend requirement</p>
+<p><code>wipe()</code> delegates to <code>delete_by_prefix()</code> / <code>invalidate_all()</code>, so
+it needs a redis-compatible backend that implements <code>delete_pattern</code>.
+Without one, the call raises.</p>
+</div>
+<h2 id="clearing-old-versions">Clearing old versions<a class="headerlink" href="#clearing-old-versions" title="Permanent link">&para;</a></h2>
+<p>Bumping <code>Meta.version</code> makes every entry written under the old version
+unreachable, but the bytes stay in the backend until they expire.
+<code>delete_previous_versions()</code> removes them, deleting versions 1 through
+n-1 across the namespace and leaving the live version n in place.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a><span class="k">class</span><span class="w"> </span><span class="nc">UserDataKey</span><span class="p">(</span><span class="n">KeyConstructor</span><span class="p">):</span>
+<a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a>    <span class="n">user</span> <span class="o">=</span> <span class="n">ArgsKeyField</span><span class="p">(</span><span class="s2">&quot;user_id&quot;</span><span class="p">,</span> <span class="n">partition</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<a id="__codelineno-12-3" name="__codelineno-12-3" href="#__codelineno-12-3"></a>
+<a id="__codelineno-12-4" name="__codelineno-12-4" href="#__codelineno-12-4"></a>    <span class="k">class</span><span class="w"> </span><span class="nc">Meta</span><span class="p">:</span>
+<a id="__codelineno-12-5" name="__codelineno-12-5" href="#__codelineno-12-5"></a>        <span class="n">namespace</span> <span class="o">=</span> <span class="s2">&quot;user_data&quot;</span>
+<a id="__codelineno-12-6" name="__codelineno-12-6" href="#__codelineno-12-6"></a>        <span class="n">version</span> <span class="o">=</span> <span class="mi">3</span>
+<a id="__codelineno-12-7" name="__codelineno-12-7" href="#__codelineno-12-7"></a>
+<a id="__codelineno-12-8" name="__codelineno-12-8" href="#__codelineno-12-8"></a><span class="n">UserDataKey</span><span class="o">.</span><span class="n">delete_previous_versions</span><span class="p">()</span>  <span class="c1"># drops versions 1 and 2</span>
+</code></pre></div>
+<p>When the version is 1 there is nothing older to remove and the call
+does nothing. Use <code>adelete_previous_versions()</code> for async contexts. The
+delete is scoped by namespace, so a constructor without a namespace
+raises rather than risk clearing unrelated keys, and the backend must
+implement <code>delete_pattern</code>.</p>
 <h2 id="where-to-next">Where to next<a class="headerlink" href="#where-to-next" title="Permanent link">&para;</a></h2>
 <ul>
 <li><a href="../cache-result/">cache_result</a>: apply a constructor to a function
