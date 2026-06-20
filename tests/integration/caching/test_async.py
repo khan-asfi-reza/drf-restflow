@@ -291,8 +291,9 @@ def test_adelete_by_prefix_uses_adelete_pattern_when_available():
 
     captured = {}
 
-    async def fake_adelete_pattern(pattern):
+    async def fake_adelete_pattern(pattern, version=None):
         captured["pattern"] = pattern
+        captured["version"] = version
         return 1
 
     with patch.object(

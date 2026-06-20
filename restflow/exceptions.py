@@ -1,4 +1,4 @@
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 
 from django.core.exceptions import ObjectDoesNotExist
@@ -13,7 +13,7 @@ from rest_framework.serializers import as_serializer_error
 from rest_framework.views import exception_handler as drf_exception_handler
 
 
-class ErrorCode(str, Enum):
+class ErrorCode(StrEnum):
     """Stable error codes returned in restflow's error response."""
 
     NOT_AUTHENTICATED = "not_authenticated"

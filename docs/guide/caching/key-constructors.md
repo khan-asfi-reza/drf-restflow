@@ -232,6 +232,61 @@ class Constructor2(BaseKeyConstructor):
 
 ```
 
+## Wiping every function that shares a constructor
+
+`delete_by_prefix()` and `invalidate_all()` act on a single wrapped
+function. When several functions share one constructor, the constructor
+itself can fan the same invalidation out across all of them with
+`wipe()`.
+
+```python
+# drop the user_id=42 partition on every function using BaseKeyConstructor
+BaseKeyConstructor.wipe(user_id=42)
+
+# drop every entry every function using it has written
+BaseKeyConstructor.wipe()
+```
+
+Arguments are passed just like a normal call and bound to each
+function's own signature, so pass partition values by keyword. With no
+arguments, `wipe()` clears every partition for each function. Use
+`awipe()` for async functions.
+
+A function is reachable by `wipe()` once its `@cache_result` or
+`@cache_response` decorator has run, which happens when its module is
+imported. Under Django all apps load before requests are served, so the
+set is complete at runtime. A script that wipes before importing the
+modules holding the cached functions reaches only what it has imported.
+
+!!! warning "Cache backend requirement"
+    `wipe()` delegates to `delete_by_prefix()` / `invalidate_all()`, so
+    it needs a redis-compatible backend that implements `delete_pattern`.
+    Without one, the call raises.
+
+## Clearing old versions
+
+Bumping `Meta.version` makes every entry written under the old version
+unreachable, but the bytes stay in the backend until they expire.
+`delete_previous_versions()` removes them, deleting versions 1 through
+n-1 across the namespace and leaving the live version n in place.
+
+```python
+class UserDataKey(KeyConstructor):
+    user = ArgsKeyField("user_id", partition=True)
+
+    class Meta:
+        namespace = "user_data"
+        version = 3
+
+UserDataKey.delete_previous_versions()  # drops versions 1 and 2
+```
+
+When the version is 1 there is nothing older to remove and the call
+does nothing. Use `adelete_previous_versions()` for async contexts. The
+delete is scoped by namespace, so a constructor without a namespace
+raises rather than risk clearing unrelated keys, and the backend must
+implement `delete_pattern`.
+
 ## Where to next
 
 - [cache_result](cache-result.md): apply a constructor to a function

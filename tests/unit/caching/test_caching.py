@@ -1,5 +1,6 @@
+import asyncio
 from datetime import datetime
-from unittest.mock import Mock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 from django.core.cache import cache
@@ -617,6 +618,156 @@ class TestDefaultKeyConstructor:
         assert constructor.fields["arguments"].arguments == "*"
 
 
+class TestKeyConstructorWipe:
+
+    def test_wrapper_registers_on_its_constructor_class(self):
+        class WipeKC(KeyConstructor):
+            user = ArgsKeyField("user_id", partition=True)
+
+        @cache_result(WipeKC, ttl=60)
+        def f(user_id):
+            return user_id
+
+        assert f in WipeKC._cache_wrappers
+
+    def test_each_constructor_class_has_an_isolated_registry(self):
+        class KCa(KeyConstructor):
+            user = ArgsKeyField("user_id", partition=True)
+
+        class KCb(KeyConstructor):
+            user = ArgsKeyField("user_id", partition=True)
+
+        @cache_result(KCa, ttl=60)
+        def fa(user_id):
+            return user_id
+
+        @cache_result(KCb, ttl=60)
+        def fb(user_id):
+            return user_id
+
+        assert fa in KCa._cache_wrappers
+        assert fa not in KCb._cache_wrappers
+        assert fb in KCb._cache_wrappers
+        assert fb not in KCa._cache_wrappers
+
+    def test_wipe_with_args_calls_delete_by_prefix_on_each_wrapper(self):
+        class KC(KeyConstructor):
+            user = ArgsKeyField("user_id", partition=True)
+
+        w1, w2 = Mock(), Mock()
+        KC._cache_wrappers[:] = [w1, w2]
+
+        KC.wipe(user_id=1)
+
+        w1.delete_by_prefix.assert_called_once_with(user_id=1)
+        w2.delete_by_prefix.assert_called_once_with(user_id=1)
+        w1.invalidate_all.assert_not_called()
+        w2.invalidate_all.assert_not_called()
+
+    def test_wipe_without_args_calls_invalidate_all_on_each_wrapper(self):
+        class KC(KeyConstructor):
+            user = ArgsKeyField("user_id", partition=True)
+
+        w1, w2 = Mock(), Mock()
+        KC._cache_wrappers[:] = [w1, w2]
+
+        KC.wipe()
+
+        w1.invalidate_all.assert_called_once_with()
+        w2.invalidate_all.assert_called_once_with()
+        w1.delete_by_prefix.assert_not_called()
+        w2.delete_by_prefix.assert_not_called()
+
+    def test_awipe_with_args_calls_adelete_by_prefix_on_each_wrapper(self):
+        class KC(KeyConstructor):
+            user = ArgsKeyField("user_id", partition=True)
+
+        w1 = Mock()
+        w1.adelete_by_prefix = AsyncMock()
+        w1.ainvalidate_all = AsyncMock()
+        KC._cache_wrappers[:] = [w1]
+
+        asyncio.run(KC.awipe(user_id=1))
+
+        w1.adelete_by_prefix.assert_awaited_once_with(user_id=1)
+        w1.ainvalidate_all.assert_not_awaited()
+
+    def test_awipe_without_args_calls_ainvalidate_all_on_each_wrapper(self):
+        class KC(KeyConstructor):
+            user = ArgsKeyField("user_id", partition=True)
+
+        w1 = Mock()
+        w1.adelete_by_prefix = AsyncMock()
+        w1.ainvalidate_all = AsyncMock()
+        KC._cache_wrappers[:] = [w1]
+
+        asyncio.run(KC.awipe())
+
+        w1.ainvalidate_all.assert_awaited_once_with()
+        w1.adelete_by_prefix.assert_not_awaited()
+
+    def test_wipe_raises_when_backend_has_no_delete_pattern(self):
+        class KC(KeyConstructor):
+            user = ArgsKeyField("user_id", partition=True)
+            v = ConstantKeyField("v", "1")
+
+        @cache_result(KC, ttl=60)
+        def f(user_id):
+            return user_id
+
+        f(1)
+
+        with pytest.raises(NotImplementedError):
+            KC.wipe(1)
+
+
+class TestKeyConstructorDeletePreviousVersions:
+
+    def test_does_nothing_on_version_1(self):
+        class KC(KeyConstructor):
+            class Meta:
+                namespace = "prev_noop"
+                version = 1
+
+        cache.set("prev_noop::k", "value", version=1)
+
+        assert KC.delete_previous_versions() is None
+        assert cache.get("prev_noop::k", version=1) == "value"
+
+    def test_requires_a_namespace_when_version_is_above_1(self):
+        class KC(KeyConstructor):
+            class Meta:
+                version = 2
+
+        with pytest.raises(ValueError):
+            KC.delete_previous_versions()
+
+    def test_raises_when_backend_has_no_delete_pattern(self):
+        class KC(KeyConstructor):
+            class Meta:
+                namespace = "prev_ns"
+                version = 2
+
+        with pytest.raises(NotImplementedError):
+            KC.delete_previous_versions()
+
+    def test_async_does_nothing_on_version_1(self):
+        class KC(KeyConstructor):
+            class Meta:
+                namespace = "prev_noop_async"
+                version = 1
+
+        assert asyncio.run(KC.adelete_previous_versions()) is None
+
+    def test_async_requires_a_namespace_when_version_is_above_1(self):
+        class KC(KeyConstructor):
+            class Meta:
+                version = 2
+
+        with pytest.raises(ValueError):
+            asyncio.run(KC.adelete_previous_versions())
+
+
 class TestKeyConstructorConfigValidation:
 
     def test_non_integer_version_raises_type_error(self):
@@ -874,6 +1025,29 @@ class TestCacheManagementMethods:
 
         @cache_result(
             {"fields": {"constant": ConstantKeyField("version", "1.0")}}, ttl=3600
+        )
+        def test_func():
+            nonlocal call_count
+            call_count += 1
+            return f"result_{call_count}"
+
+        test_func()
+        test_func()
+        assert call_count == 1
+
+        test_func.delete_cache()
+        test_func()
+        assert call_count == 2
+
+    def test_delete_cache_uses_constructor_version(self):
+        call_count = 0
+
+        @cache_result(
+            {
+                "fields": {"constant": ConstantKeyField("version", "1.0")},
+                "version": 2,
+            },
+            ttl=3600,
         )
         def test_func():
             nonlocal call_count
