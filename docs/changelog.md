@@ -5,7 +5,34 @@ All notable changes to drf-restflow will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## 
+## [1.4.0] - 2026-06-20
+
+### Added
+- `KeyConstructor.wipe()` invalidates the cache for every function that shares a constructor in one call. `delete_by_prefix()` and `invalidate_all()` act on a single wrapped function, while the constructor keeps a list of the functions decorated with it and fans the same invalidation out across all of them. Arguments bind to each function's signature like a normal call, so `wipe(user_id=42)` drops that partition everywhere and a bare `wipe()` clears every partition. Use `awipe()` for async functions. A function joins the set when its `@cache_result` or `@cache_response` decorator runs at import time, and the call needs a redis-compatible backend that implements `delete_pattern`.
+
+  ```python
+  class UserDataKey(KeyConstructor):
+      user = ArgsKeyField("user_id", partition=True)
+
+      class Meta:
+          namespace = "user_data"
+
+  @cache_result(UserDataKey, ttl=300)
+  def get_profile(user_id): ...
+
+  @cache_result(UserDataKey, ttl=300)
+  def get_settings(user_id): ...
+
+  UserDataKey.wipe(user_id=42)  # drops user 42 on both functions
+  UserDataKey.wipe()            # drops every entry both functions wrote
+  ```
+
+- `KeyConstructor.delete_previous_versions()` removes cache entries left behind by older versions of a constructor. Bumping `Meta.version` makes old entries unreachable but leaves the bytes in the backend until they expire. When the version is n above 1, this deletes versions 1 through n-1 across the namespace with `cache.delete_pattern`, leaving the live version n in place. A version of 1 is a no-op. The delete is scoped by namespace, so a constructor without one raises, and the backend must implement `delete_pattern`. Use `adelete_previous_versions()` in async contexts.
+
+### Fixes
+- `delete_cache()`, `delete_by_prefix()`, and `invalidate_all()` now delete at the constructor's version. Reads and writes already passed `version=` from `Meta.version`, but the delete paths did not, so on a constructor with a non-default version the deletes targeted version 1 and never matched the stored keys. The same version is now applied on every delete, including the async variants.
+
+## [1.3.0] - 2026-06-20
 
 ### Added
 - `NotRequired[T]` annotation marker for serializer fields. It sets `required=False` without touching `allow_null`, so a key may be left out of the input but must not be null when present. This complements `Optional[T]` / `T | None`, which mark a field both optional and nullable. The marker is re-exported from `restflow.serializers`, composes with the other forms (`NotRequired[T | None]` is optional and nullable), and an explicit `Field(required=True)` still takes precedence.

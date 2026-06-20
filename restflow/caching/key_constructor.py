@@ -4,6 +4,8 @@ from collections.abc import Callable
 from functools import cached_property
 from typing import Any, ParamSpec, TypeVar, cast
 
+from django.core.cache import cache
+
 from restflow.caching.hashing import hash_string
 from restflow.caching.key_fields import ArgsKeyField, CacheKeyField
 from restflow.helpers import getattr_multi_source, sort_dict
@@ -25,6 +27,12 @@ _TYPE_FRIENDLY: dict[type, str] = {
     str: "a string",
     bool: "a boolean",
 }
+
+_DELETE_PATTERN_UNSUPPORTED = (
+    "This cache backend does not support delete_pattern. Install "
+    "django-redis (or another backend that exposes delete_pattern) to use "
+    "delete_previous_versions()."
+)
 
 
 def ensure_type(name: str, value: Any, expected: type) -> None:
@@ -134,6 +142,7 @@ class KeyConstructorMetaClass(type):
         attrs["_declared_key_constructors"] = (
             cls._get_declared_key_constructors(bases, attrs)
         )
+        attrs["_cache_wrappers"] = []
         return super().__new__(cls, name, bases, attrs)
 
 
@@ -286,6 +295,83 @@ class KeyConstructor(metaclass=KeyConstructorMetaClass):
             return f"{module}.{qualname}"
 
         return f"{module}.{func.__name__}"
+
+    @classmethod
+    def register_wrapper(cls, wrapper) -> None:
+        """Record a cached function that uses this constructor so wipe can reach it."""
+        cls._cache_wrappers.append(wrapper)
+
+    @classmethod
+    def wipe(cls, *args, **kwargs) -> None:
+        """Invalidate cached entries for every function that uses this constructor.
+
+        With no arguments, drops every entry each registered function has
+        written. With arguments, treats them as a partial call and clears
+        the matching partition on each function. Needs a cache backend
+        that exposes delete_pattern, such as django-redis.
+        """
+        for wrapper in cls._cache_wrappers:
+            if not args and not kwargs:
+                wrapper.invalidate_all()
+            else:
+                wrapper.delete_by_prefix(*args, **kwargs)
+
+    @classmethod
+    async def awipe(cls, *args, **kwargs) -> None:
+        """Async variant of wipe."""
+        for wrapper in cls._cache_wrappers:
+            if not args and not kwargs:
+                await wrapper.ainvalidate_all()
+            else:
+                await wrapper.adelete_by_prefix(*args, **kwargs)
+
+    @classmethod
+    def _previous_versions_target(cls):
+        version = int(getattr(cls._meta, "version", 1))
+        if version <= 1:
+            return None, None
+        namespace = getattr(cls._meta, "namespace", "")
+        if not namespace:
+            msg = (
+                "delete_previous_versions needs a namespace on Meta so the "
+                "delete can be scoped to this constructor."
+            )
+            raise ValueError(msg)
+        return f"{namespace}::*", version
+
+    @classmethod
+    def delete_previous_versions(cls) -> None:
+        """Delete cache entries left behind by older versions of this constructor.
+
+        Does nothing when the version is 1. When the version is n above 1,
+        entries written under versions 1 through n-1 are deleted across the
+        namespace, leaving the live version n in place. Needs a namespace on
+        Meta and a cache backend that exposes delete_pattern.
+        """
+        pattern, current = cls._previous_versions_target()
+        if current is None:
+            return
+        delete_pattern = getattr(cache, "delete_pattern", None)
+        if delete_pattern is None:
+            raise NotImplementedError(_DELETE_PATTERN_UNSUPPORTED)
+        for version in range(1, current):
+            delete_pattern(pattern, version=version)
+
+    @classmethod
+    async def adelete_previous_versions(cls) -> None:
+        """Async variant of delete_previous_versions."""
+        pattern, current = cls._previous_versions_target()
+        if current is None:
+            return
+        adelete_pattern = getattr(cache, "adelete_pattern", None)
+        delete_pattern = getattr(cache, "delete_pattern", None)
+        if adelete_pattern is None and delete_pattern is None:
+            raise NotImplementedError(_DELETE_PATTERN_UNSUPPORTED)
+        for version in range(1, current):
+            if adelete_pattern is not None:
+                await adelete_pattern(pattern, version=version)
+            else:
+                delete_pattern(pattern, version=version)
 
 
 class InlineKeyConstructor:

@@ -1,7 +1,7 @@
 import enum
 
 
-class CacheStatus(str, enum.Enum):
+class CacheStatus(enum.StrEnum):
     """
     How a cached call resolved.
 

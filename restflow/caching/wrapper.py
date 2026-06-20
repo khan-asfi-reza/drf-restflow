@@ -67,6 +67,7 @@ class CachedWrapper(Generic[P, T]):
         self._func = func
         self._is_async = inspect.iscoroutinefunction(func)
         self._constructor = constructor
+        type(constructor).register_wrapper(self)
         self._ttl = ttl
         self._invalidates_on = invalidates_on
         self._cache_if = cache_if
@@ -360,12 +361,12 @@ class CachedWrapper(Generic[P, T]):
         """Drop the cache entry for these specific call arguments."""
         self._refuse_if_async("adelete_cache")
         cache_key = self.get_cache_key(*args, **kwargs)
-        cache.delete(cache_key)
+        cache.delete(cache_key, version=self.get_key_version())
 
     async def adelete_cache(self, *args: P.args, **kwargs: P.kwargs) -> None:
         """Async variant of delete_cache."""
         cache_key = self.get_cache_key(*args, **kwargs)
-        await cache.adelete(cache_key)
+        await cache.adelete(cache_key, version=self.get_key_version())
 
     def _delete_prefix(self, cache_prefix: str):
         """Wipe every cache entry whose key starts with `cache_prefix` (uses the backend's `delete_pattern`).
@@ -379,17 +380,18 @@ class CachedWrapper(Generic[P, T]):
         delete_pattern = getattr(cache, "delete_pattern", None)
         if delete_pattern is None:
             raise NotImplementedError(self._delete_pattern_unsupported_msg())
-        return delete_pattern(f"{cache_prefix}*")
+        return delete_pattern(f"{cache_prefix}*", version=self.get_key_version())
 
     async def _adelete_prefix(self, cache_prefix: str):
         """Async variant of _delete_prefix that falls back to the sync delete_pattern when no async one exists."""
+        version = self.get_key_version()
         adelete_pattern = getattr(cache, "adelete_pattern", None)
         if adelete_pattern is not None:
-            return await adelete_pattern(f"{cache_prefix}*")
+            return await adelete_pattern(f"{cache_prefix}*", version=version)
         delete_pattern = getattr(cache, "delete_pattern", None)
         if delete_pattern is None:
             raise NotImplementedError(self._delete_pattern_unsupported_msg())
-        return delete_pattern(f"{cache_prefix}*")
+        return delete_pattern(f"{cache_prefix}*", version=version)
 
     def _delete_pattern_unsupported_msg(self):
         return (
