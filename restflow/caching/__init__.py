@@ -34,7 +34,9 @@ from restflow.caching.key_fields import (
 from restflow.caching.registry import CacheRegister
 from restflow.caching.rules import InvalidationRule
 from restflow.caching.wrapper import (
+    AsyncCachedWrapper,
     CachedWrapper,
+    SyncCachedWrapper,
     cache_result,
     set_response_cache_header,
 )
@@ -42,6 +44,7 @@ from restflow.caching.wrapper import (
 __all__ = [
     "CACHE_MISSING",
     "ArgsKeyField",
+    "AsyncCachedWrapper",
     "AsyncIODispatcher",
     "CacheKeyField",
     "CacheRegister",
@@ -64,6 +67,7 @@ __all__ = [
     "QueryParamsKeyField",
     "RequestValueKeyField",
     "ResponseCacheKeyConstructor",
+    "SyncCachedWrapper",
     "ThreadPoolDispatcher",
     "ViewKwargsKeyField",
     "cache_response",

@@ -5,6 +5,22 @@ All notable changes to drf-restflow will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.1] - 2026-07-04
+
+### Added
+- `cache_result` now reports the wrapped callable's return type to type checkers. The decorator picks `SyncCachedWrapper` for a plain function and `AsyncCachedWrapper` for a coroutine function, so calling a cached sync function is typed as its return value and calling a cached async function is typed as a coroutine to await. Both classes are re-exported from `restflow.caching`. Runtime behavior is unchanged, this only sharpens the static types.
+
+  ```python
+  @cache_result(UserKey, ttl=300)
+  def get_profile(user_id: int) -> Profile: ...
+
+  @cache_result(UserKey, ttl=300)
+  async def aget_profile(user_id: int) -> Profile: ...
+
+  reveal_type(get_profile(1))   # Profile
+  reveal_type(aget_profile(1))  # Coroutine[Any, Any, Profile]
+  ```
+
 ## [1.4.0] - 2026-06-20
 
 ### Added

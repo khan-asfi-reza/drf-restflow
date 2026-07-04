@@ -1,9 +1,9 @@
 import datetime
 import inspect
-from collections.abc import Callable
+from collections.abc import Callable, Coroutine
 from contextlib import suppress
 from functools import partial, wraps
-from typing import Any, Generic, ParamSpec, TypeVar
+from typing import Any, Generic, ParamSpec, Protocol, TypeVar, cast, overload
 
 from django.core.cache import cache
 from django.template.response import SimpleTemplateResponse
@@ -160,23 +160,30 @@ class CachedWrapper(Generic[P, T]):
         return {
             METADATA_CACHED_AT_KEY: timezone.now().isoformat(),
             METADATA_RESET_AT_KEY: reset_at,
-            METADATA_CACHE_STATUS: CacheStatus.MISS.value
+            METADATA_CACHE_STATUS: CacheStatus.MISS.value,
         }
 
-    def _build_cache_payload(self, value, metadata,):
+    def _build_cache_payload(
+        self,
+        value,
+        metadata,
+    ):
         return {
             CACHED_DATA_VALUE_KEY: value,
             CACHED_DATA_METADATA_KEY: metadata,
         }
-
 
     def cache_set_with_timestamp(
         self, key, value, timeout: int | None = None, version=1
     ):
         """Write value to the cache under key with cached-at and reset-at timestamps. Returns (value, metadata)."""
         metadata = self._build_cache_metadata(timeout=timeout)
+
         def _cache_result(_value):
-            payload = self._build_cache_payload(_value, metadata=metadata,)
+            payload = self._build_cache_payload(
+                _value,
+                metadata=metadata,
+            )
             cache.set(key, payload, timeout=timeout, version=version)
             return _value
 
@@ -195,10 +202,10 @@ class CachedWrapper(Generic[P, T]):
         """Async variant of cache_set_with_timestamp using cache.aset."""
         metadata = self._build_cache_metadata(timeout=timeout)
 
-        if (
-            isinstance(value, SimpleTemplateResponse)
-            and not getattr(value, "_is_rendered", True)
+        if isinstance(value, SimpleTemplateResponse) and not getattr(
+            value, "_is_rendered", True
         ):
+
             def _cache_result(_value):
                 payload = self._build_cache_payload(_value, metadata=metadata)
                 cache.set(key, payload, timeout=timeout, version=version)
@@ -214,7 +221,9 @@ class CachedWrapper(Generic[P, T]):
 
     def __call__(self, *args: P.args, **kwargs: P.kwargs):
         if self._is_async:
-            return self._async_call(args, kwargs, with_metadata=False, refresh=False)
+            return self._async_call(
+                args, kwargs, with_metadata=False, refresh=False
+            )
         return self._sync_call(args, kwargs, with_metadata=False, refresh=False)
 
     def _sync_call(self, args, kwargs, *, with_metadata, refresh):
@@ -380,7 +389,9 @@ class CachedWrapper(Generic[P, T]):
         delete_pattern = getattr(cache, "delete_pattern", None)
         if delete_pattern is None:
             raise NotImplementedError(self._delete_pattern_unsupported_msg())
-        return delete_pattern(f"{cache_prefix}*", version=self.get_key_version())
+        return delete_pattern(
+            f"{cache_prefix}*", version=self.get_key_version()
+        )
 
     async def _adelete_prefix(self, cache_prefix: str):
         """Async variant of _delete_prefix that falls back to the sync delete_pattern when no async one exists."""
@@ -454,6 +465,38 @@ class CachedWrapper(Generic[P, T]):
         return await self._adelete_prefix(cache_prefix)
 
 
+class SyncCachedWrapper(CachedWrapper[P, T]):
+    """CachedWrapper for a sync target, so calling it returns the value directly."""
+
+    def __call__(self, *args: P.args, **kwargs: P.kwargs) -> T:
+        return cast(
+            T,
+            self._sync_call(args, kwargs, with_metadata=False, refresh=False),
+        )
+
+
+class AsyncCachedWrapper(CachedWrapper[P, T]):
+    """CachedWrapper for an async target, so calling it returns a coroutine to await."""
+
+    def __call__(
+        self, *args: P.args, **kwargs: P.kwargs
+    ) -> Coroutine[Any, Any, T]:
+        return cast(
+            Coroutine[Any, Any, T],
+            self._async_call(args, kwargs, with_metadata=False, refresh=False),
+        )
+
+
+class _CacheResultDecorator(Protocol):
+    @overload
+    def __call__(
+        self, func: Callable[P, Coroutine[Any, Any, T]]
+    ) -> AsyncCachedWrapper[P, T]: ...
+
+    @overload
+    def __call__(self, func: Callable[P, T]) -> SyncCachedWrapper[P, T]: ...
+
+
 def cache_result(
     key_constructor: (
         "KeyConstructor | dict[str, Any] | type[KeyConstructor]"
@@ -462,7 +505,7 @@ def cache_result(
     invalidates_on: list["InvalidationRule"] | None = None,
     cache_if: Callable | None = None,
     cache_unless: Callable | None = None,
-):
+) -> _CacheResultDecorator:
     """
     Cache a function's return value, with optional invalidation triggered by Django model signals.
 
@@ -489,7 +532,12 @@ def cache_result(
     invalidates_on = invalidates_on or []
 
     def decorator(func):
-        return CachedWrapper(
+        wrapper_cls = (
+            AsyncCachedWrapper
+            if inspect.iscoroutinefunction(func)
+            else SyncCachedWrapper
+        )
+        return wrapper_cls(
             func=func,
             key_constructor=key_constructor,
             invalidates_on=invalidates_on,
