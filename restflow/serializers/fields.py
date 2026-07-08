@@ -70,7 +70,7 @@ class BlankableCharField(drf_fields.CharField):
 
 
 
-SerializerFieldMap: dict[type, type[drf_fields.Field]] = {
+SerializerFieldMap: dict[Any, type[drf_fields.Field]] = {
     int: drf_fields.IntegerField,
     float: drf_fields.FloatField,
     str: drf_fields.CharField,

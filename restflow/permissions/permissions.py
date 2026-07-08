@@ -1,11 +1,18 @@
+from typing import TYPE_CHECKING, Any, cast
+
 from asgiref.sync import sync_to_async
 from rest_framework import permissions as drf_perms
 from rest_framework.permissions import SAFE_METHODS
+from rest_framework.request import Request
+from rest_framework.views import APIView
+
+if TYPE_CHECKING:
+    from django.contrib.auth.models import AbstractUser
 
 from restflow.helpers import maybe_await
 
 
-def has_permission(perm, request, view):
+def has_permission(perm: Any, request: Request, view: APIView) -> Any:
     """Async compatible has_permission checker. Checks whether async variant exists or not."""
     ahas = getattr(perm, "ahas_permission", None)
     if ahas is not None:
@@ -13,7 +20,9 @@ def has_permission(perm, request, view):
     return perm.has_permission(request, view)
 
 
-def has_object_permission(perm, request, view, obj):
+def has_object_permission(
+    perm: Any, request: Request, view: APIView, obj: Any
+) -> Any:
     """Async compatible has_object_permission checker. Checks whether async variant exists or not."""
     ahas = getattr(perm, "ahas_object_permission", None)
     if ahas is not None:
@@ -22,19 +31,19 @@ def has_object_permission(perm, request, view, obj):
 
 
 class AsyncOperationMixin(drf_perms.OperationHolderMixin):
-    def __and__(self, other):
+    def __and__(self, other):  # pyright: ignore[reportIncompatibleMethodOverride]
         return AsyncOperand(AND, self, other)
 
-    def __or__(self, other):
+    def __or__(self, other):  # pyright: ignore[reportIncompatibleMethodOverride]
         return AsyncOperand(OR, self, other)
 
-    def __rand__(self, other):
+    def __rand__(self, other):  # pyright: ignore[reportIncompatibleMethodOverride]
         return AsyncOperand(AND, other, self)
 
-    def __ror__(self, other):
+    def __ror__(self, other):  # pyright: ignore[reportIncompatibleMethodOverride]
         return AsyncOperand(OR, other, self)
 
-    def __invert__(self):
+    def __invert__(self):  # pyright: ignore[reportIncompatibleMethodOverride]
         return AsyncSingleOperand(NOT, self)
 
 
@@ -66,13 +75,18 @@ class AND(drf_perms.AND):
     Adds async ahas_permission and ahas_object_permission that short-circuit on the first denying operand.
     """
 
-    async def ahas_permission(self, request, view):
+    op1: Any
+    op2: Any
+
+    async def ahas_permission(self, request: Request, view: APIView) -> bool:
         """Returns True only when both operands allow the request."""
         if not await maybe_await(has_permission(self.op1, request, view)):
             return False
         return await maybe_await(has_permission(self.op2, request, view))
 
-    async def ahas_object_permission(self, request, view, obj):
+    async def ahas_object_permission(
+        self, request: Request, view: APIView, obj: Any
+    ) -> bool:
         """Returns True only when both operands allow access to the object."""
         if not await maybe_await(
             has_object_permission(self.op1, request, view, obj)
@@ -89,13 +103,18 @@ class OR(drf_perms.OR):
     Adds async ahas_permission and ahas_object_permission that short-circuit on the first allowing operand.
     """
 
-    async def ahas_permission(self, request, view):
+    op1: Any
+    op2: Any
+
+    async def ahas_permission(self, request: Request, view: APIView) -> bool:
         """Returns True when either operand allows the request."""
         if await maybe_await(has_permission(self.op1, request, view)):
             return True
         return await maybe_await(has_permission(self.op2, request, view))
 
-    async def ahas_object_permission(self, request, view, obj):
+    async def ahas_object_permission(
+        self, request: Request, view: APIView, obj: Any
+    ) -> bool:
         """Returns True when either operand allows access to the object."""
         if await maybe_await(
             has_permission(self.op1, request, view)
@@ -116,13 +135,17 @@ class NOT(drf_perms.NOT):
     Adds async ahas_permission and ahas_object_permission that invert the wrapped permission's verdict.
     """
 
-    async def ahas_permission(self, request, view):
+    op1: Any
+
+    async def ahas_permission(self, request: Request, view: APIView) -> bool:
         """Returns the negation of the wrapped operand's permission check."""
         return not await maybe_await(
             has_permission(self.op1, request, view)
         )
 
-    async def ahas_object_permission(self, request, view, obj):
+    async def ahas_object_permission(
+        self, request: Request, view: APIView, obj: Any
+    ) -> bool:
         """Returns the negation of the wrapped operand's object permission check."""
         return not await maybe_await(
             has_object_permission(self.op1, request, view, obj)
@@ -142,13 +165,15 @@ class BasePermission(drf_perms.BasePermission, metaclass=BasePermissionMetaclass
     Adds async ahas_permission and ahas_object_permission hooks that default to running the sync methods in a thread.
     """
 
-    async def ahas_permission(self, request, view):
+    async def ahas_permission(self, request: Request, view: APIView) -> bool:
         """Returns True when the request is permitted, False otherwise."""
         return await sync_to_async(
             self.has_permission, thread_sensitive=True
         )(request, view)
 
-    async def ahas_object_permission(self, request, view, obj):
+    async def ahas_object_permission(
+        self, request: Request, view: APIView, obj: Any
+    ) -> bool:
         """Returns True when the request is permitted to act on the given object."""
         return await sync_to_async(
             self.has_object_permission, thread_sensitive=True
@@ -161,7 +186,7 @@ class AllowAny(BasePermission, drf_perms.AllowAny):
     Adds an async surface that returns True .
     """
 
-    async def ahas_permission(self, request, view):
+    async def ahas_permission(self, request: Request, view: APIView) -> bool:
         """Always returns True."""
         return True
 
@@ -172,7 +197,7 @@ class IsAuthenticated(BasePermission, drf_perms.IsAuthenticated):
     Adds an async surface that reads request.user .
     """
 
-    async def ahas_permission(self, request, view):
+    async def ahas_permission(self, request: Request, view: APIView) -> bool:
         """Returns True if the request user is authenticated."""
         return bool(request.user and request.user.is_authenticated)
 
@@ -183,9 +208,9 @@ class IsAdminUser(BasePermission, drf_perms.IsAdminUser):
     Adds an async surface that reads request.user .
     """
 
-    async def ahas_permission(self, request, view):
+    async def ahas_permission(self, request: Request, view: APIView) -> bool:
         """Returns True if the request user is staff."""
-        return bool(request.user and request.user.is_staff)
+        return bool(request.user and cast("AbstractUser", request.user).is_staff)
 
 
 class IsAuthenticatedOrReadOnly(BasePermission, drf_perms.IsAuthenticatedOrReadOnly):
@@ -194,7 +219,7 @@ class IsAuthenticatedOrReadOnly(BasePermission, drf_perms.IsAuthenticatedOrReadO
     Adds an async surface that resolves .
     """
 
-    async def ahas_permission(self, request, view):
+    async def ahas_permission(self, request: Request, view: APIView) -> bool:
         """Returns True for SAFE_METHODS or when the request user is authenticated."""
         return bool(
             request.method in SAFE_METHODS

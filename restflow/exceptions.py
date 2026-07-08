@@ -5,6 +5,7 @@ from django.core.exceptions import ObjectDoesNotExist
 from django.core.exceptions import PermissionDenied as DjangoPermissionDenied
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.http import Http404
+from django.utils.functional import Promise
 from django.utils.translation import gettext_lazy as _
 from rest_framework import exceptions as drf_exceptions
 from rest_framework import status
@@ -61,7 +62,7 @@ class APIException(drf_exceptions.APIException):
 
 def format_error(
     code: str | ErrorCode,
-    message: str,
+    message: str | Promise,
     details: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Build the canonical error envelope dict."""
@@ -97,9 +98,10 @@ def _stringify(value: Any) -> str:
 
 
 def _throttled_details(exc: drf_exceptions.Throttled) -> dict[str, Any]:
-    if exc.wait is None:
+    wait = getattr(exc, "wait", None)
+    if wait is None:
         return {}
-    return {"retry_after_seconds": int(exc.wait)}
+    return {"retry_after_seconds": int(wait)}
 
 
 def exception_handler(exc: Exception, context: dict[str, Any]) -> Response | None:

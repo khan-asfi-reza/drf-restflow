@@ -2,7 +2,7 @@ import copy
 import inspect
 from collections.abc import Callable
 from functools import cached_property
-from typing import Any, ParamSpec, TypeVar, cast
+from typing import TYPE_CHECKING, Any, ClassVar, ParamSpec, TypeVar, cast
 
 from django.core.cache import cache
 
@@ -10,6 +10,9 @@ from restflow.caching.hashing import hash_string
 from restflow.caching.key_fields import ArgsKeyField, CacheKeyField
 from restflow.helpers import getattr_multi_source, sort_dict
 from restflow.settings import restflow_settings
+
+if TYPE_CHECKING:
+    from restflow.caching.wrapper import CachedWrapper
 
 P = ParamSpec("P")
 T = TypeVar("T")
@@ -49,7 +52,7 @@ def get_meta_config(
     key: str,
     default=None,
     skip_settings: bool = False,
-):
+) -> Any:
     """Look up a Meta option, with an optional fallback to RESTFLOW_SETTINGS."""
     sentinel = default if skip_settings else Default
     val = getattr_multi_source(options, key, sentinel)
@@ -164,6 +167,9 @@ class KeyConstructor(metaclass=KeyConstructorMetaClass):
                     namespace = "myapp"
                     version = 1
     """
+
+    _meta: ClassVar[KeyConstructorConfig]
+    _cache_wrappers: ClassVar[list["CachedWrapper"]]
 
     def get_version(self) -> int:
         """Return the version declared on Meta, bumping it invalidates all keys for this constructor."""
@@ -371,7 +377,9 @@ class KeyConstructor(metaclass=KeyConstructorMetaClass):
             if adelete_pattern is not None:
                 await adelete_pattern(pattern, version=version)
             else:
-                delete_pattern(pattern, version=version)
+                cast(Callable[..., Any], delete_pattern)(
+                    pattern, version=version
+                )
 
 
 class InlineKeyConstructor:

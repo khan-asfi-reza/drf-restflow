@@ -1,8 +1,14 @@
+from typing import Any
+
 from asgiref.sync import sync_to_async
 from rest_framework import throttling as drf_throttle
+from rest_framework.request import Request
+from rest_framework.views import APIView
 
 
-def throttler_allow_request(throttle, request, view):
+def throttler_allow_request(
+    throttle: Any, request: Request, view: APIView
+) -> Any:
     """Async-compat allow_request dispatcher. Prefers aallow_request when present."""
     aallow = getattr(throttle, "aallow_request", None)
     if aallow is not None:
@@ -15,7 +21,9 @@ class BaseThrottle(drf_throttle.BaseThrottle):
     Adds an async aallow_request hook that defaults to running the sync allow_request in a thread.
     """
 
-    async def aallow_request(self, request, view):
+    async def aallow_request(
+        self, request: Request, view: APIView
+    ) -> bool:
         """Returns True if the request should be allowed, False otherwise."""
         return await sync_to_async(
             self.allow_request, thread_sensitive=True
@@ -28,7 +36,12 @@ class SimpleRateThrottle(BaseThrottle, drf_throttle.SimpleRateThrottle):
     Adds an async surface that uses Django's async cache so rate limiting does not block the event loop.
     """
 
-    async def aallow_request(self, request, view):
+    num_requests: int
+    duration: int
+
+    async def aallow_request(
+        self, request: Request, view: APIView
+    ) -> bool:
         """Returns True if the request rate is below the configured limit, False otherwise."""
         if self.rate is None:
             return True
@@ -45,7 +58,7 @@ class SimpleRateThrottle(BaseThrottle, drf_throttle.SimpleRateThrottle):
             return self.throttle_failure()
         return await self.athrottle_success()
 
-    async def athrottle_success(self):
+    async def athrottle_success(self) -> bool:
         """Records the successful request in the cache and returns True."""
         self.history.insert(0, self.now)
         await self.cache.aset(self.key, self.history, self.duration)

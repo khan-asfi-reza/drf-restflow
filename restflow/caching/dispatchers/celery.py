@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 
 from restflow.caching.dispatchers.base import Dispatcher
 
@@ -10,7 +10,7 @@ except ImportError:  # pragma: no cover
     _celery_current_app = None
 
 
-def _require_celery():
+def _require_celery() -> Any:
     if _celery_current_app is None:
         msg = (
             "celery is required for celery-based cache invalidation. "
@@ -37,8 +37,9 @@ class CeleryDispatcher(Dispatcher):
         _require_celery()
 
     def _resolved_task_name(self) -> str:
-        return self.config.get("task_name") or self.settings().get(
-            "TASK_NAME"
+        return cast(
+            str,
+            self.config.get("task_name") or self.settings().get("TASK_NAME"),
         )
 
     def _resolved_queue(self) -> str | None:
@@ -62,6 +63,7 @@ class CeleryDispatcher(Dispatcher):
         rule_ids: list[int],
         signal_type,
         rule_kwargs: dict[str, dict[str, Any]],
+        **_context: Any,
     ) -> None:
         """Send the rules to the configured Celery task."""
         celery_app = _require_celery()

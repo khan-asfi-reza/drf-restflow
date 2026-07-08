@@ -1,12 +1,13 @@
 import datetime
 import decimal
 import inspect
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from typing import (
     TYPE_CHECKING,
     Any,
     Literal,
     Optional,
+    cast,
 )
 
 if TYPE_CHECKING:
@@ -67,7 +68,7 @@ DEFAULT_FIELD_LOOKUPS = {
 }
 
 
-LOOKUP_SET = set(DjangoField.get_lookups().keys())
+LOOKUP_SET = set(DjangoField.get_lookups().keys())  # pyright: ignore[reportCallIssue]
 
 ALL_FIELDS = "__all__"
 
@@ -140,12 +141,12 @@ def extract_model_fields(model: type[Model], fields: FieldsType, exclude: list[s
         raise ValueError(msg)
 
     if fields == ALL_FIELDS:
-        fields = model._meta.get_fields()
+        resolved_fields: list[Any] = model._meta.get_fields()
     else:
-        fields = [model._meta.get_field(field) for field in fields]
+        resolved_fields = [model._meta.get_field(field) for field in fields]
 
     model_fields = []
-    for field in fields:
+    for field in resolved_fields:
         if field.name not in exclude:
             model_fields.append(field)
     return model_fields
@@ -178,15 +179,15 @@ def process_lookups(lookups: LookupsType, lookup_categories: list[str]) -> list[
         lookups = [cat for cat in lookup_categories if cat in LOOKUP_CATEGORIES]
 
     if not all(
-        isinstance(lookup, str) for lookup in (lookups if isinstance(lookups, (list, tuple)) else lookups.keys())
+        isinstance(lookup, str) for lookup in (lookups if isinstance(lookups, (list, tuple)) else cast("dict[str, Any]", lookups).keys())
     ):
         msg = "`lookups` must be a list of strings or dict with string keys"
         raise AssertionError(msg)
 
     if isinstance(lookups, dict) and lookups and all(isinstance(v, str) for v in lookups.values()):
-        return dict(lookups)
+        return cast("dict[str, str]", dict(lookups))
 
-    expanded = {} if isinstance(lookups, dict) else []
+    expanded: Any = {} if isinstance(lookups, dict) else []
 
     items = lookups.items() if isinstance(lookups, dict) else [(lookup, None) for lookup in lookups]
 
@@ -308,19 +309,22 @@ class Field(drf_fields.Field):
 
     lookup_categories = ["basic", "text"]
 
+    _base_field_name: str | None
+    _explicit_help_text: bool
+
     def __init__(
             self,
             *,
-            db_field="",
-            filter_by: str | Callable[[Any], Any] | dict | None = None,
+            db_field: str = "",
+            filter_by: str | Callable[[Any], Any] | dict[str, Any] | None = None,
             lookups: LookupsType = None,
             lookup_separator: str | None = None,
             method: Callable[[Any, QuerySet, Any], tuple[Q,QuerySet] | Q | QuerySet] | str | None = None,
             negate: bool = False,
             required: bool = False,
             allow_negate: bool = True,
-            **kwargs,
-    ):
+            **kwargs: Any,
+    ) -> None:
         if method and filter_by:
             msg = "`method` and `filter_by` cannot be used together."
             raise AssertionError(msg)
@@ -353,7 +357,7 @@ class Field(drf_fields.Field):
 
     def clone(self, _type=None, field_name=None, **inner_kwargs):
         """Return a copy of this field, optionally re-typed via annotation."""
-        default_kwargs = dict(
+        default_kwargs: dict[str, Any] = dict(
             filter_by=self.filter_by,
             db_field=self.db_field,
             lookups=self.lookups,
@@ -394,7 +398,9 @@ class Field(drf_fields.Field):
     def _filter_expression(self):
         return self.filter_by or self.db_field or self.field_name
 
-    def _finalize_method(self, result, queryset):
+    def _finalize_method(
+        self, result: Any, queryset: QuerySet
+    ) -> tuple[QuerySet, Q | None]:
         # Note: negation is intentionally not applied here. The original sync
         # implementation only inverted Q objects produced by the filter_by
         # branch, the method branch passes the user's Q through untouched.
@@ -409,7 +415,9 @@ class Field(drf_fields.Field):
     async def _await_method(self, awaitable, queryset):
         return self._finalize_method(await awaitable, queryset)
 
-    def _apply_filter_by(self, queryset, value):
+    def _apply_filter_by(
+        self, queryset: QuerySet, value: Any
+    ) -> tuple[QuerySet, Q | None]:
         q = None
         filter_by = self._filter_expression
 
@@ -443,7 +451,7 @@ class Field(drf_fields.Field):
             filterset: "FilterSet",
             queryset: QuerySet,
             value: Any,
-    ) -> tuple[QuerySet, Optional[Q]]:
+    ) -> tuple[QuerySet, Optional[Q]] | Awaitable[tuple[QuerySet, Optional[Q]]]:
         """
         Apply the field's filter to a queryset based on the validated value.
 
@@ -468,7 +476,7 @@ class Field(drf_fields.Field):
 
         """
         if self.method:
-            method = self.get_method(filterset)
+            method = cast("Callable[..., Any]", self.get_method(filterset))
             # String `method` resolves to an attribute on the filterset, an
             # instance method is already bound so `self` is implicitly the
             # filterset. Avoid passing it again as an explicit argument.
@@ -733,9 +741,9 @@ class OrderField(MultipleChoiceField):
 
     def apply_filter(
             self, filterset, queryset: QuerySet, value: list[str]
-    ) -> tuple[QuerySet, Q | None]:
+    ) -> tuple[QuerySet, Q | None] | Awaitable[tuple[QuerySet, Q | None]]:
         if self.method:
-            method = self.get_method(filterset)
+            method = cast("Callable[..., Any]", self.get_method(filterset))
             if isinstance(self.method, str):
                 result = method(queryset, value)
             else:
@@ -875,7 +883,7 @@ class RelatedField(Field):
     def get_model_fields(self):
         return extract_model_fields(model=self.model, fields=self.fields, exclude=self.exclude)
 
-    def apply_filter(
+    def apply_filter(  # pyright: ignore[reportIncompatibleMethodOverride]
             self,
             _,
             queryset: QuerySet,
@@ -883,7 +891,7 @@ class RelatedField(Field):
     ) -> tuple[QuerySet, Optional[Q]]:
         return queryset, None  # pragma: no cover
 
-    def get_method(self, *_):
+    def get_method(self, *_):  # pyright: ignore[reportIncompatibleMethodOverride]
         return None # pragma: no cover
 
     def __str__(self):
@@ -891,7 +899,7 @@ class RelatedField(Field):
                 f"model={self.model}, fields={self.fields}, extra_kwargs={self.extra_kwargs}, exclude_fields={self.exclude}"
                 f")")
 
-DataTypeSerializerMap: dict[type, type[Field]] = {
+DataTypeSerializerMap: dict[Any, type[Field]] = {
     int: IntegerField,
     float: FloatField,
     str: StringField,

@@ -23,7 +23,15 @@ from restflow.serializers.validated_data import (
 )
 
 if TYPE_CHECKING:
-    from typing import Self
+    from typing import Literal, Self, overload
+
+    from rest_framework.serializers import ListSerializer
+
+    _AsyncMixinBase = drf_serializers.Serializer
+    _AsyncModelMixinBase = drf_serializers.ModelSerializer
+else:
+    _AsyncMixinBase = object
+    _AsyncModelMixinBase = object
 
 
 def build_explicit_fields(attrs: dict) -> list[tuple[str, drf_fields.Field]]:
@@ -86,11 +94,13 @@ class SerializerMetaClass(drf_serializers.SerializerMetaclass):
                     continue
                 inherited.append((n, f))
                 known.add(n)
-        klass._declared_fields = dict(inherited + annotated + explicit)
+        cast("type[drf_serializers.Serializer]", klass)._declared_fields = dict(
+            inherited + annotated + explicit
+        )
         return klass
 
 
-class AsyncSerializerMixin:
+class AsyncSerializerMixin(_AsyncMixinBase):
     """Sync hooks refuse async user callables. async variants await them."""
 
     def to_internal_value(self, data):
@@ -117,9 +127,9 @@ class AsyncSerializerMixin:
                         "ato_internal_value",
                     )
             except ValidationError as exc:
-                errors[field.field_name] = exc.detail
+                errors[cast(str, field.field_name)] = exc.detail
             except DjangoValidationError as exc:
-                errors[field.field_name] = get_error_detail(exc)
+                errors[cast(str, field.field_name)] = get_error_detail(exc)
             except SkipField:
                 pass
             else:
@@ -206,9 +216,9 @@ class AsyncSerializerMixin:
                         validate_method(validated_value)
                     )
             except ValidationError as exc:
-                errors[field.field_name] = exc.detail
+                errors[cast(str, field.field_name)] = exc.detail
             except DjangoValidationError as exc:
-                errors[field.field_name] = get_error_detail(exc)
+                errors[cast(str, field.field_name)] = get_error_detail(exc)
             except SkipField:
                 pass
             else:
@@ -317,6 +327,31 @@ class AsyncSerializerMixin:
 class TypedValidatedDataMixin:
     """Override DRF's validated_data property to return a ValidatedData wrapper recursively built from the validated tree. Typed as Self so IDE autocomplete resolves to the field annotations declared on the class."""
 
+    if TYPE_CHECKING:
+
+        @overload
+        def __new__(
+            cls, *args: Any, many: "Literal[True]", **kwargs: Any
+        ) -> "ListSerializer": ...
+
+        @overload
+        def __new__(
+            cls, *args: Any, many: "Literal[False]" = ..., **kwargs: Any
+        ) -> "Self": ...
+
+        def __new__(cls, *args: Any, **kwargs: Any) -> Any: ...
+
+        def __init__(
+            self,
+            instance: Any = ...,
+            data: Any = ...,
+            *,
+            partial: bool = ...,
+            many: bool = ...,
+            context: Mapping[str, Any] = ...,
+            **kwargs: Any,
+        ) -> None: ...
+
     @property
     def validated_data(self) -> "Self":
         if not hasattr(self, "_validated_data"):
@@ -384,7 +419,7 @@ class ModelSerializerMetaClass(SerializerMetaClass):
         meta.fields = tuple(existing) if isinstance(fields, tuple) else list(existing)
 
 
-class AsyncModelSerializerMixin:
+class AsyncModelSerializerMixin(_AsyncModelMixinBase):
     """Default async create and update for ModelSerializer subclasses. Mirrors DRF's sync ModelSerializer.create and ModelSerializer.update logic with the async ORM (acreate, asave, aset)."""
 
     async def acreate(self, validated_data):

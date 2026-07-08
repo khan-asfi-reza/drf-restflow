@@ -1,7 +1,12 @@
+from typing import Any
+
 from asgiref.sync import sync_to_async
 from django.core.exceptions import ValidationError
+from django.db.models import QuerySet
 from django.http import Http404
 from rest_framework import generics as drf_generics
+from rest_framework.request import Request
+from rest_framework.response import Response
 
 from restflow.views.mixins import (
     AsyncCreateModelMixin,
@@ -13,7 +18,7 @@ from restflow.views.mixins import (
 from restflow.views.views import AsyncAPIView
 
 
-class AsyncGenericAPIView(AsyncAPIView, drf_generics.GenericAPIView):
+class AsyncGenericAPIView(AsyncAPIView, drf_generics.GenericAPIView):  # pyright: ignore[reportIncompatibleVariableOverride, reportIncompatibleMethodOverride]
     """
     Base class for all other generic views, with an async dispatch loop.
 
@@ -22,7 +27,9 @@ class AsyncGenericAPIView(AsyncAPIView, drf_generics.GenericAPIView):
     async hooks.
     """
 
-    async def afilter_queryset(self, queryset):
+    async def afilter_queryset(
+        self, queryset: QuerySet[Any]
+    ) -> QuerySet[Any]:
         """
         Returns a filtered queryset, awaiting any async-aware filter backends.
         """
@@ -37,7 +44,9 @@ class AsyncGenericAPIView(AsyncAPIView, drf_generics.GenericAPIView):
                 )(self.request, queryset, self)
         return queryset
 
-    async def apaginate_queryset(self, queryset):
+    async def apaginate_queryset(
+        self, queryset: QuerySet[Any]
+    ) -> list[Any] | None:
         """
         Returns a single page of results, or None if pagination is disabled.
         """
@@ -50,7 +59,7 @@ class AsyncGenericAPIView(AsyncAPIView, drf_generics.GenericAPIView):
             self.paginator.paginate_queryset, thread_sensitive=True
         )(queryset, self.request, view=self)
 
-    async def aget_object(self):
+    async def aget_object(self) -> Any:
         """
         Returns the object the view is displaying, looked up via queryset.aget.
         """
@@ -75,34 +84,46 @@ class AsyncGenericAPIView(AsyncAPIView, drf_generics.GenericAPIView):
 
 class AsyncCreateAPIView(AsyncCreateModelMixin, AsyncGenericAPIView):
 
-    async def post(self, request, *args, **kwargs):
+    async def post(
+        self, request: Request, *args: Any, **kwargs: Any
+    ) -> Response:
         return await self.create(request, *args, **kwargs)
 
 
 class AsyncListAPIView(AsyncListModelMixin, AsyncGenericAPIView):
 
-    async def get(self, request, *args, **kwargs):
+    async def get(
+        self, request: Request, *args: Any, **kwargs: Any
+    ) -> Response:
         return await self.list(request, *args, **kwargs)
 
 
 class AsyncRetrieveAPIView(AsyncRetrieveModelMixin, AsyncGenericAPIView):
 
-    async def get(self, request, *args, **kwargs):
+    async def get(
+        self, request: Request, *args: Any, **kwargs: Any
+    ) -> Response:
         return await self.retrieve(request, *args, **kwargs)
 
 
 class AsyncDestroyAPIView(AsyncDestroyModelMixin, AsyncGenericAPIView):
 
-    async def delete(self, request, *args, **kwargs):
+    async def delete(
+        self, request: Request, *args: Any, **kwargs: Any
+    ) -> Response:
         return await self.destroy(request, *args, **kwargs)
 
 
 class AsyncUpdateAPIView(AsyncUpdateModelMixin, AsyncGenericAPIView):
 
-    async def put(self, request, *args, **kwargs):
+    async def put(
+        self, request: Request, *args: Any, **kwargs: Any
+    ) -> Response:
         return await self.update(request, *args, **kwargs)
 
-    async def patch(self, request, *args, **kwargs):
+    async def patch(
+        self, request: Request, *args: Any, **kwargs: Any
+    ) -> Response:
         return await self.partial_update(request, *args, **kwargs)
 
 
@@ -110,10 +131,14 @@ class AsyncListCreateAPIView(
     AsyncListModelMixin, AsyncCreateModelMixin, AsyncGenericAPIView
 ):
 
-    async def get(self, request, *args, **kwargs):
+    async def get(
+        self, request: Request, *args: Any, **kwargs: Any
+    ) -> Response:
         return await self.list(request, *args, **kwargs)
 
-    async def post(self, request, *args, **kwargs):
+    async def post(
+        self, request: Request, *args: Any, **kwargs: Any
+    ) -> Response:
         return await self.create(request, *args, **kwargs)
 
 
@@ -125,13 +150,19 @@ class AsyncRetrieveUpdateAPIView(
     async pipeline.
     """
 
-    async def get(self, request, *args, **kwargs):
+    async def get(
+        self, request: Request, *args: Any, **kwargs: Any
+    ) -> Response:
         return await self.retrieve(request, *args, **kwargs)
 
-    async def put(self, request, *args, **kwargs):
+    async def put(
+        self, request: Request, *args: Any, **kwargs: Any
+    ) -> Response:
         return await self.update(request, *args, **kwargs)
 
-    async def patch(self, request, *args, **kwargs):
+    async def patch(
+        self, request: Request, *args: Any, **kwargs: Any
+    ) -> Response:
         return await self.partial_update(request, *args, **kwargs)
 
 
@@ -139,10 +170,14 @@ class AsyncRetrieveDestroyAPIView(
     AsyncRetrieveModelMixin, AsyncDestroyModelMixin, AsyncGenericAPIView
 ):
 
-    async def get(self, request, *args, **kwargs):
+    async def get(
+        self, request: Request, *args: Any, **kwargs: Any
+    ) -> Response:
         return await self.retrieve(request, *args, **kwargs)
 
-    async def delete(self, request, *args, **kwargs):
+    async def delete(
+        self, request: Request, *args: Any, **kwargs: Any
+    ) -> Response:
         return await self.destroy(request, *args, **kwargs)
 
 
@@ -153,14 +188,22 @@ class AsyncRetrieveUpdateDestroyAPIView(
     AsyncGenericAPIView,
 ):
 
-    async def get(self, request, *args, **kwargs):
+    async def get(
+        self, request: Request, *args: Any, **kwargs: Any
+    ) -> Response:
         return await self.retrieve(request, *args, **kwargs)
 
-    async def put(self, request, *args, **kwargs):
+    async def put(
+        self, request: Request, *args: Any, **kwargs: Any
+    ) -> Response:
         return await self.update(request, *args, **kwargs)
 
-    async def patch(self, request, *args, **kwargs):
+    async def patch(
+        self, request: Request, *args: Any, **kwargs: Any
+    ) -> Response:
         return await self.partial_update(request, *args, **kwargs)
 
-    async def delete(self, request, *args, **kwargs):
+    async def delete(
+        self, request: Request, *args: Any, **kwargs: Any
+    ) -> Response:
         return await self.destroy(request, *args, **kwargs)

@@ -1,6 +1,11 @@
 import asyncio
+from typing import TYPE_CHECKING
 
 from rest_framework.response import Response as DRFResponse
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+    from typing import Any
 
 
 class Response(DRFResponse):
@@ -16,7 +21,9 @@ class Response(DRFResponse):
     render() unchanged.
     """
 
-    async def arender(self):
+    _post_render_callbacks: "list[Callable[[Any], Any]]"
+
+    async def arender(self) -> "Response":
         """Render content and await any coroutine-function post-render callbacks."""
         if self._is_rendered:
             return self

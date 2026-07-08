@@ -3,7 +3,7 @@ from __future__ import annotations
 import dataclasses
 import importlib
 from collections.abc import Callable
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from django.db import models
 
@@ -84,7 +84,7 @@ class InvalidationRule:
             module = importlib.import_module(module_path)
             target = getattr(module, attr)
         self._resolved_invalidator = target
-        return target
+        return cast("Callable[..., None]", target)
 
     def get_dispatcher(self) -> Dispatcher:
         """Return the Dispatcher instance for this rule, building it on the first call and caching it."""

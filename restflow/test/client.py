@@ -1,3 +1,5 @@
+from typing import TYPE_CHECKING, Any, cast
+
 from django.conf import settings as django_settings
 from django.test import AsyncClient as DjangoAsyncClient
 from django.test import AsyncRequestFactory as DjangoAsyncRequestFactory
@@ -5,8 +7,20 @@ from django.test.client import AsyncClientHandler
 from django.utils.encoding import force_bytes
 from rest_framework.settings import api_settings
 
+if TYPE_CHECKING:
+    from collections.abc import Sequence
 
-def force_authenticate(request, user=None, token=None):
+    from django.core.handlers.asgi import ASGIRequest
+    from django.http import HttpRequest
+    from django.http.response import HttpResponseBase
+    from django.test.client import _MonkeyPatchedASGIResponse
+    from django.utils.functional import _StrOrPromise
+    from rest_framework.renderers import BaseRenderer
+
+
+def force_authenticate(
+    request: Any, user: Any = None, token: Any = None
+) -> None:
     """
     Force-authenticate a request, bypassing the authenticator chain.
     """
@@ -14,11 +28,19 @@ def force_authenticate(request, user=None, token=None):
     request._force_auth_token = token
 
 
-def _renderer_classes():
-    return {cls.format: cls for cls in api_settings.TEST_REQUEST_RENDERER_CLASSES}
+def _renderer_classes() -> "dict[str, type[BaseRenderer]]":
+    classes = cast(
+        "Sequence[type[BaseRenderer]]",
+        api_settings.TEST_REQUEST_RENDERER_CLASSES,
+    )
+    return {cls.format: cls for cls in classes}
 
 
-def _encode_data(data, format=None, content_type=None):
+def _encode_data(
+    data: Any = None,
+    format: str | None = None,
+    content_type: str | None = None,
+) -> "tuple[bytes, str | None]":
     if data is None:
         return (b"", content_type)
 
@@ -43,7 +65,7 @@ def _encode_data(data, format=None, content_type=None):
     if renderer.charset:
         media_type = f"{media_type}; charset={renderer.charset}"
     if isinstance(ret, str):
-        ret = ret.encode(renderer.charset)
+        ret = ret.encode(cast("str", renderer.charset))
     return ret, media_type
 
 
@@ -58,38 +80,60 @@ class AsyncAPIRequestFactory(DjangoAsyncRequestFactory):
 
     default_format = "json"
 
-    def __init__(self, enforce_csrf_checks=False, **defaults):
+    def __init__(
+        self, enforce_csrf_checks: bool = False, **defaults: Any
+    ) -> None:
         self.enforce_csrf_checks = enforce_csrf_checks
         super().__init__(**defaults)
 
-    def post(self, path, data=None, format=None, content_type=None, **extra):
+    def post(  # pyright: ignore[reportIncompatibleMethodOverride]
+        self, path: "_StrOrPromise", data: Any = None,
+        format: str | None = None, content_type: str | None = None,
+        **extra: Any,
+    ) -> "ASGIRequest":
         """Construct a POST request with DRF-style format encoding."""
         body, ct = _encode_data(data, format, content_type)
         return self.generic("POST", path, body, ct, **extra)
 
-    def put(self, path, data=None, format=None, content_type=None, **extra):
+    def put(  # pyright: ignore[reportIncompatibleMethodOverride]
+        self, path: "_StrOrPromise", data: Any = None,
+        format: str | None = None, content_type: str | None = None,
+        **extra: Any,
+    ) -> "ASGIRequest":
         """Construct a PUT request with DRF-style format encoding."""
         body, ct = _encode_data(data, format, content_type)
         return self.generic("PUT", path, body, ct, **extra)
 
-    def patch(self, path, data=None, format=None, content_type=None, **extra):
+    def patch(  # pyright: ignore[reportIncompatibleMethodOverride]
+        self, path: "_StrOrPromise", data: Any = None,
+        format: str | None = None, content_type: str | None = None,
+        **extra: Any,
+    ) -> "ASGIRequest":
         """Construct a PATCH request with DRF-style format encoding."""
         body, ct = _encode_data(data, format, content_type)
         return self.generic("PATCH", path, body, ct, **extra)
 
-    def delete(self, path, data=None, format=None, content_type=None, **extra):
+    def delete(  # pyright: ignore[reportIncompatibleMethodOverride]
+        self, path: "_StrOrPromise", data: Any = None,
+        format: str | None = None, content_type: str | None = None,
+        **extra: Any,
+    ) -> "ASGIRequest":
         """Construct a DELETE request with DRF-style format encoding."""
         body, ct = _encode_data(data, format, content_type)
         return self.generic("DELETE", path, body, ct, **extra)
 
-    def options(self, path, data=None, format=None, content_type=None, **extra):
+    def options(  # pyright: ignore[reportIncompatibleMethodOverride]
+        self, path: "_StrOrPromise", data: Any = None,
+        format: str | None = None, content_type: str | None = None,
+        **extra: Any,
+    ) -> "ASGIRequest":
         """Construct an OPTIONS request with DRF-style format encoding."""
         body, ct = _encode_data(data, format, content_type)
         return self.generic("OPTIONS", path, body, ct, **extra)
 
-    def request(self, **kwargs):
+    def request(self, **kwargs: Any) -> "ASGIRequest":
         """Construct a generic request, marking CSRF checks per the factory setting."""
-        request = super().request(**kwargs)
+        request: Any = super().request(**kwargs)
         request._dont_enforce_csrf_checks = not self.enforce_csrf_checks
         return request
 
@@ -97,12 +141,17 @@ class AsyncAPIRequestFactory(DjangoAsyncRequestFactory):
 class _ForceAuthAsyncClientHandler(AsyncClientHandler):
     """AsyncClientHandler that injects force-authentication onto each outgoing request."""
 
-    def __init__(self, *args, **kwargs):
+    _force_user: Any
+    _force_token: Any
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
         self._force_user = None
         self._force_token = None
         super().__init__(*args, **kwargs)
 
-    async def get_response_async(self, request):
+    async def get_response_async(
+        self, request: "HttpRequest"
+    ) -> "HttpResponseBase":
         """Apply force-auth attrs to the request, then dispatch through middleware."""
         force_authenticate(request, self._force_user, self._force_token)
         return await super().get_response_async(request)
@@ -118,13 +167,17 @@ class AsyncAPIClient(DjangoAsyncClient):
     """
 
     default_format = "json"
+    handler: _ForceAuthAsyncClientHandler
+    _credentials: dict[str, Any]
 
-    def __init__(self, enforce_csrf_checks=False, **defaults):
+    def __init__(
+        self, enforce_csrf_checks: bool = False, **defaults: Any
+    ) -> None:
         super().__init__(enforce_csrf_checks=enforce_csrf_checks, **defaults)
-        self.handler = _ForceAuthAsyncClientHandler(enforce_csrf_checks)
+        self.handler = _ForceAuthAsyncClientHandler(enforce_csrf_checks)  # pyright: ignore[reportIncompatibleVariableOverride]
         self._credentials = {}
 
-    def credentials(self, **kwargs):
+    def credentials(self, **kwargs: Any) -> None:
         """Set headers used on every outgoing request. Keys must start with HTTP_ or CONTENT_ to mirror Django's WSGI environ convention."""
         for key in kwargs:
             if not key.startswith(("HTTP_", "CONTENT_")):
@@ -136,12 +189,14 @@ class AsyncAPIClient(DjangoAsyncClient):
                 raise ValueError(msg)
         self._credentials = kwargs
 
-    def force_authenticate(self, user=None, token=None):
+    def force_authenticate(
+        self, user: Any = None, token: Any = None
+    ) -> None:
         """Forcibly authenticate outgoing requests with the given user or token."""
         self.handler._force_user = user
         self.handler._force_token = token
 
-    def logout(self):
+    def logout(self) -> None:
         """Clear credentials, force-auth, and any active session."""
         self._credentials = {}
         self.handler._force_user = None
@@ -149,7 +204,7 @@ class AsyncAPIClient(DjangoAsyncClient):
         if self.session:
             super().logout()
 
-    async def request(self, **kwargs):
+    async def request(self, **kwargs: Any) -> "_MonkeyPatchedASGIResponse":
         """Make a generic async request, merging stored credentials into headers."""
         if self._credentials:
             existing_headers = list(kwargs.get("headers", []))
@@ -164,63 +219,74 @@ class AsyncAPIClient(DjangoAsyncClient):
             kwargs["headers"] = existing_headers
         return await super().request(**kwargs)
 
-    async def get(self, path, data=None, follow=False, secure=False, **extra):
+    async def get(
+        self, path: "_StrOrPromise", data: Any = None,
+        follow: bool = False, secure: bool = False, **extra: Any,
+    ) -> "_MonkeyPatchedASGIResponse":
         """Send a GET request."""
         return await super().get(
             path, data=data, follow=follow, secure=secure, **extra
         )
 
-    async def post(
-        self, path, data=None, format=None, content_type=None,
-        follow=False, secure=False, **extra,
-    ):
+    async def post(  # pyright: ignore[reportIncompatibleMethodOverride]
+        self, path: "_StrOrPromise", data: Any = None,
+        format: str | None = None, content_type: str | None = None,
+        follow: bool = False, secure: bool = False, **extra: Any,
+    ) -> "_MonkeyPatchedASGIResponse":
         """Send a POST request with DRF-style format encoding."""
         body, ct = _encode_data(data, format, content_type)
         return await super().post(
-            path, data=body, content_type=ct, follow=follow, secure=secure, **extra
+            path, data=body, content_type=ct, follow=follow, secure=secure, **extra  # pyright: ignore[reportArgumentType]
         )
 
-    async def put(
-        self, path, data=None, format=None, content_type=None,
-        follow=False, secure=False, **extra,
-    ):
+    async def put(  # pyright: ignore[reportIncompatibleMethodOverride]
+        self, path: "_StrOrPromise", data: Any = None,
+        format: str | None = None, content_type: str | None = None,
+        follow: bool = False, secure: bool = False, **extra: Any,
+    ) -> "_MonkeyPatchedASGIResponse":
         """Send a PUT request with DRF-style format encoding."""
         body, ct = _encode_data(data, format, content_type)
         return await super().put(
-            path, data=body, content_type=ct, follow=follow, secure=secure, **extra
+            path, data=body, content_type=ct, follow=follow, secure=secure, **extra  # pyright: ignore[reportArgumentType]
         )
 
-    async def patch(
-        self, path, data=None, format=None, content_type=None,
-        follow=False, secure=False, **extra,
-    ):
+    async def patch(  # pyright: ignore[reportIncompatibleMethodOverride]
+        self, path: "_StrOrPromise", data: Any = None,
+        format: str | None = None, content_type: str | None = None,
+        follow: bool = False, secure: bool = False, **extra: Any,
+    ) -> "_MonkeyPatchedASGIResponse":
         """Send a PATCH request with DRF-style format encoding."""
         body, ct = _encode_data(data, format, content_type)
         return await super().patch(
-            path, data=body, content_type=ct, follow=follow, secure=secure, **extra
+            path, data=body, content_type=ct, follow=follow, secure=secure, **extra  # pyright: ignore[reportArgumentType]
         )
 
-    async def delete(
-        self, path, data=None, format=None, content_type=None,
-        follow=False, secure=False, **extra,
-    ):
+    async def delete(  # pyright: ignore[reportIncompatibleMethodOverride]
+        self, path: "_StrOrPromise", data: Any = None,
+        format: str | None = None, content_type: str | None = None,
+        follow: bool = False, secure: bool = False, **extra: Any,
+    ) -> "_MonkeyPatchedASGIResponse":
         """Send a DELETE request with DRF-style format encoding."""
         body, ct = _encode_data(data, format, content_type)
         return await super().delete(
-            path, data=body, content_type=ct, follow=follow, secure=secure, **extra
+            path, data=body, content_type=ct, follow=follow, secure=secure, **extra  # pyright: ignore[reportArgumentType]
         )
 
-    async def options(
-        self, path, data=None, format=None, content_type=None,
-        follow=False, secure=False, **extra,
-    ):
+    async def options(  # pyright: ignore[reportIncompatibleMethodOverride]
+        self, path: "_StrOrPromise", data: Any = None,
+        format: str | None = None, content_type: str | None = None,
+        follow: bool = False, secure: bool = False, **extra: Any,
+    ) -> "_MonkeyPatchedASGIResponse":
         """Send an OPTIONS request with DRF-style format encoding."""
         body, ct = _encode_data(data, format, content_type)
         return await super().options(
-            path, data=body, content_type=ct, follow=follow, secure=secure, **extra
+            path, data=body, content_type=ct, follow=follow, secure=secure, **extra  # pyright: ignore[reportArgumentType]
         )
 
-    async def head(self, path, data=None, follow=False, secure=False, **extra):
+    async def head(
+        self, path: "_StrOrPromise", data: Any = None,
+        follow: bool = False, secure: bool = False, **extra: Any,
+    ) -> "_MonkeyPatchedASGIResponse":
         """Send a HEAD request."""
         return await super().head(
             path, data=data, follow=follow, secure=secure, **extra
