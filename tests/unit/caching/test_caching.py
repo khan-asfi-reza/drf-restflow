@@ -1336,7 +1336,7 @@ class TestCacheIf:
     def test_cache_if_true_caches_returned_value(self):
         call_count = 0
 
-        @cache_result(self.KEY, cache_if=lambda x: x == "cache_me")
+        @cache_result(self.KEY, cache_if=lambda x, *a, **k: x == "cache_me")
         def f():
             nonlocal call_count
             call_count += 1
@@ -1349,7 +1349,7 @@ class TestCacheIf:
     def test_cache_if_false_skips_caching(self):
         call_count = 0
 
-        @cache_result(self.KEY, cache_if=lambda x: x == "cache_me")
+        @cache_result(self.KEY, cache_if=lambda x, *a, **k: x == "cache_me")
         def f():
             nonlocal call_count
             call_count += 1
@@ -1362,7 +1362,7 @@ class TestCacheIf:
     def test_cache_if_receives_the_actual_function_result(self):
         received = []
 
-        @cache_result(self.KEY, cache_if=lambda x: (received.append(x), True)[1])
+        @cache_result(self.KEY, cache_if=lambda x, *a, **k: (received.append(x), True)[1])
         def f():
             return {"status": "ok", "count": 5}
 
@@ -1372,7 +1372,7 @@ class TestCacheIf:
     def test_cache_unless_skips_when_predicate_returns_true(self):
         call_count = 0
 
-        @cache_result(self.KEY, cache_unless=lambda x: x is None)
+        @cache_result(self.KEY, cache_unless=lambda x, *a, **k: x is None)
         def f():
             nonlocal call_count
             call_count += 1
@@ -1384,7 +1384,7 @@ class TestCacheIf:
     def test_cache_unless_caches_when_predicate_returns_false(self):
         call_count = 0
 
-        @cache_result(self.KEY, cache_unless=lambda x: x is None)
+        @cache_result(self.KEY, cache_unless=lambda x, *a, **k: x is None)
         def f():
             nonlocal call_count
             call_count += 1
@@ -1397,7 +1397,7 @@ class TestCacheIf:
     def test_cache_unless_skips_empty_dict(self):
         call_count = 0
 
-        @cache_result(self.KEY, cache_unless=lambda x: not x)
+        @cache_result(self.KEY, cache_unless=lambda x, *a, **k: not x)
         def f():
             nonlocal call_count
             call_count += 1
@@ -1410,7 +1410,7 @@ class TestCacheIf:
     def test_cache_unless_caches_non_empty_dict(self):
         call_count = 0
 
-        @cache_result(self.KEY, cache_unless=lambda x: not x)
+        @cache_result(self.KEY, cache_unless=lambda x, *a, **k: not x)
         def f():
             nonlocal call_count
             call_count += 1
@@ -1447,7 +1447,7 @@ class TestCacheIf:
     def test_cache_unless_with_custom_predicate(self):
         call_count = 0
 
-        @cache_result(self.KEY, cache_unless=lambda x: x.get("error") is not None)
+        @cache_result(self.KEY, cache_unless=lambda x, *a, **k: x.get("error") is not None)
         def f():
             nonlocal call_count
             call_count += 1

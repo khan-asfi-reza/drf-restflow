@@ -1,6 +1,6 @@
 import datetime
 import inspect
-from collections.abc import Callable, Coroutine
+from collections.abc import Awaitable, Callable, Coroutine
 from contextlib import suppress
 from functools import partial, wraps
 from typing import Any, Generic, ParamSpec, Protocol, TypeVar, cast, overload
@@ -29,6 +29,9 @@ from restflow.caching.rules import InvalidationRule
 P = ParamSpec("P")
 T = TypeVar("T")
 
+TTLValue = int | None
+TTLArg = TTLValue | Callable[..., "TTLValue | Awaitable[TTLValue]"]
+
 
 class CachedWrapper(Generic[P, T]):
     """
@@ -42,6 +45,13 @@ class CachedWrapper(Generic[P, T]):
     """
 
     is_cached_function: bool = True
+    __name__: str
+    __wrapped__: Callable[P, T]
+
+    @property
+    def func(self) -> Callable[P, T]:
+        """Return the undecorated target function this wrapper caches, typed with its original signature. Calling it runs the function directly, skipping the cache."""
+        return self._func
 
     def __init__(
         self,
@@ -49,7 +59,7 @@ class CachedWrapper(Generic[P, T]):
         key_constructor: (
             "KeyConstructor | dict[str, Any] | type[KeyConstructor]"
         ),
-        ttl: int | None,
+        ttl: TTLArg,
         invalidates_on: list[InvalidationRule],
         cache_if: Callable | None = None,
         cache_unless: Callable | None = None,
@@ -112,15 +122,15 @@ class CachedWrapper(Generic[P, T]):
             )
             raise TypeError(msg)
 
-    def _refuse_if_sync_predicate_returns_coroutine(self, value):
+    def _refuse_if_sync_returns_coroutine(self, value, what="predicate"):
         if inspect.isawaitable(value):
             close = getattr(value, "close", None)
             if close is not None:
                 close()
             msg = (
-                f"async predicate detected on sync-wrapped function "
+                f"async {what} detected on sync-wrapped function "
                 f"{self.__name__!r}. Make the wrapped function async or "
-                f"use a sync predicate."
+                f"use a sync {what}."
             )
             raise TypeError(msg)
         return value
@@ -187,7 +197,9 @@ class CachedWrapper(Generic[P, T]):
             cache.set(key, payload, timeout=timeout, version=version)
             return _value
 
-        if isinstance(value, SimpleTemplateResponse) and not value._is_rendered:
+        if isinstance(value, SimpleTemplateResponse) and not cast(
+            Any, value
+        )._is_rendered:
             value.add_post_render_callback(_cache_result)
 
         else:
@@ -227,7 +239,9 @@ class CachedWrapper(Generic[P, T]):
         return self._sync_call(args, kwargs, with_metadata=False, refresh=False)
 
     def _sync_call(self, args, kwargs, *, with_metadata, refresh):
-        cache_key = self.get_cache_key(*args, **kwargs)
+        cache_key = cast(Callable[..., str], self.get_cache_key)(
+            *args, **kwargs
+        )
 
         if not refresh:
             cached_result, metadata = self.cache_get_with_metadata(cache_key)
@@ -238,14 +252,14 @@ class CachedWrapper(Generic[P, T]):
                     else cached_result
                 )
 
-        result = self._func(*args, **kwargs)
-        do_cache = self._evaluate_cache_predicate_sync(result)
+        result = cast(Callable[..., T], self._func)(*args, **kwargs)
+        do_cache = self._evaluate_cache_predicate_sync(result, args, kwargs)
 
         if do_cache:
             value, _metadata = self.cache_set_with_timestamp(
                 key=cache_key,
                 value=result,
-                timeout=self._ttl,
+                timeout=self._resolve_ttl_sync(result, args, kwargs),
                 version=self.get_key_version(),
             )
         else:
@@ -254,7 +268,9 @@ class CachedWrapper(Generic[P, T]):
         return (value, _metadata) if with_metadata else value
 
     async def _async_call(self, args, kwargs, *, with_metadata, refresh):
-        cache_key = self.get_cache_key(*args, **kwargs)
+        cache_key = cast(Callable[..., str], self.get_cache_key)(
+            *args, **kwargs
+        )
 
         if not refresh:
             cached_result, metadata = await self.acache_get_with_metadata(
@@ -267,14 +283,17 @@ class CachedWrapper(Generic[P, T]):
                     else cached_result
                 )
 
-        result = await self._func(*args, **kwargs)
-        do_cache = await self._evaluate_cache_predicate_async(result)
+        func = cast(Callable[..., Coroutine[Any, Any, T]], self._func)
+        result = await func(*args, **kwargs)
+        do_cache = await self._evaluate_cache_predicate_async(
+            result, args, kwargs
+        )
 
         if do_cache:
             value, _metadata = await self.acache_set_with_timestamp(
                 key=cache_key,
                 value=result,
-                timeout=self._ttl,
+                timeout=await self._resolve_ttl_async(result, args, kwargs),
                 version=self.get_key_version(),
             )
         else:
@@ -282,31 +301,47 @@ class CachedWrapper(Generic[P, T]):
 
         return (value, _metadata) if with_metadata else value
 
-    def _evaluate_cache_predicate_sync(self, result):
+    def _evaluate_cache_predicate_sync(self, result, args, kwargs):
         if self._cache_if is not None:
-            out = self._refuse_if_sync_predicate_returns_coroutine(
-                self._cache_if(result)
+            out = self._refuse_if_sync_returns_coroutine(
+                self._cache_if(result, *args, **kwargs)
             )
             return bool(out)
         if self._cache_unless is not None:
-            out = self._refuse_if_sync_predicate_returns_coroutine(
-                self._cache_unless(result)
+            out = self._refuse_if_sync_returns_coroutine(
+                self._cache_unless(result, *args, **kwargs)
             )
             return not bool(out)
         return True
 
-    async def _evaluate_cache_predicate_async(self, result):
+    async def _evaluate_cache_predicate_async(self, result, args, kwargs):
         if self._cache_if is not None:
-            out = self._cache_if(result)
+            out = self._cache_if(result, *args, **kwargs)
             if inspect.isawaitable(out):
                 out = await out
             return bool(out)
         if self._cache_unless is not None:
-            out = self._cache_unless(result)
+            out = self._cache_unless(result, *args, **kwargs)
             if inspect.isawaitable(out):
                 out = await out
             return not bool(out)
         return True
+
+    def _resolve_ttl_sync(self, result, args, kwargs) -> TTLValue:
+        if not callable(self._ttl):
+            return self._ttl
+        computed = self._refuse_if_sync_returns_coroutine(
+            self._ttl(result, *args, **kwargs), what="ttl"
+        )
+        return cast(TTLValue, computed)
+
+    async def _resolve_ttl_async(self, result, args, kwargs) -> TTLValue:
+        if not callable(self._ttl):
+            return self._ttl
+        computed = self._ttl(result, *args, **kwargs)
+        if inspect.isawaitable(computed):
+            computed = await computed
+        return cast(TTLValue, computed)
 
     def get_key_version(self) -> int:
         """Return the cache version number from the key constructor. Bumping it invalidates every entry."""
@@ -447,7 +482,9 @@ class CachedWrapper(Generic[P, T]):
 
     async def abypass_cache(self, *args: P.args, **kwargs: P.kwargs) -> T:
         """Async variant of bypass_cache."""
-        return await self._func(*args, **kwargs)
+        return await cast(
+            Coroutine[Any, Any, T], self._func(*args, **kwargs)
+        )
 
     def invalidate_all(self):
         """Drop every cache entry this wrapper has ever written, across every set of call arguments."""
@@ -489,7 +526,7 @@ class AsyncCachedWrapper(CachedWrapper[P, T]):
 
 class _CacheResultDecorator(Protocol):
     @overload
-    def __call__(
+    def __call__(  # pyright: ignore[reportOverlappingOverload]
         self, func: Callable[P, Coroutine[Any, Any, T]]
     ) -> AsyncCachedWrapper[P, T]: ...
 
@@ -501,7 +538,7 @@ def cache_result(
     key_constructor: (
         "KeyConstructor | dict[str, Any] | type[KeyConstructor]"
     ) = DefaultKeyConstructor,
-    ttl: int | None = 3600,
+    ttl: TTLArg = 3600,
     invalidates_on: list["InvalidationRule"] | None = None,
     cache_if: Callable | None = None,
     cache_unless: Callable | None = None,
@@ -511,6 +548,13 @@ def cache_result(
 
     Works for sync and async targets. Returns a decorator that replaces
     the target function with a CachedWrapper.
+
+    ttl accepts an int number of seconds, None to cache without expiry, or a
+    callable ttl(result, *args, **kwargs) that returns an int or None. The
+    callable runs on a cache miss just before the write and may be async on an
+    async target. cache_if and cache_unless are called the same way as
+    predicate(result, *args, **kwargs) and cache only when they return truthy
+    or falsy respectively.
 
     Example:
         ::
@@ -546,7 +590,7 @@ def cache_result(
             ttl=ttl,
         )
 
-    return decorator
+    return cast(_CacheResultDecorator, decorator)
 
 
 def set_response_cache_header(response, metadata):

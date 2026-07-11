@@ -10,7 +10,11 @@ from restflow.caching.key_fields import (
     ViewKwargsKeyField,
 )
 from restflow.caching.rules import InvalidationRule
-from restflow.caching.wrapper import CachedWrapper, set_response_cache_header
+from restflow.caching.wrapper import (
+    CachedWrapper,
+    TTLArg,
+    set_response_cache_header,
+)
 
 
 class ResponseCacheKeyConstructor(KeyConstructor):
@@ -65,7 +69,7 @@ class CachedResponseWrapper(CachedWrapper):
                 return (response, metadata) if with_metadata else response
 
         response = self.render_view_response_sync(args, kwargs)
-        if not self._evaluate_cache_predicate_sync(response):
+        if not self._evaluate_cache_predicate_sync(response, args, kwargs):
             self._maybe_attach_headers(response, None)
             return (response, None) if with_metadata else response
 
@@ -73,7 +77,7 @@ class CachedResponseWrapper(CachedWrapper):
         _, _metadata = self.cache_set_with_timestamp(
             key=cache_key,
             value=triple,
-            timeout=self._ttl,
+            timeout=self._resolve_ttl_sync(response, args, kwargs),
             version=self.get_key_version(),
         )
         self._maybe_attach_headers(response, _metadata)
@@ -90,7 +94,9 @@ class CachedResponseWrapper(CachedWrapper):
                 return (response, metadata) if with_metadata else response
 
         response = await self.render_view_response_async(args, kwargs)
-        if not await self._evaluate_cache_predicate_async(response):
+        if not await self._evaluate_cache_predicate_async(
+            response, args, kwargs
+        ):
             self._maybe_attach_headers(response, None)
             return (response, None) if with_metadata else response
 
@@ -98,7 +104,7 @@ class CachedResponseWrapper(CachedWrapper):
         _, _metadata = await self.acache_set_with_timestamp(
             key=cache_key,
             value=triple,
-            timeout=self._ttl,
+            timeout=await self._resolve_ttl_async(response, args, kwargs),
             version=self.get_key_version(),
         )
         self._maybe_attach_headers(response, _metadata)
@@ -181,7 +187,7 @@ def cache_response(
     key_constructor: (
         "KeyConstructor | dict | type[KeyConstructor] | None"
     ) = None,
-    ttl: int | None = 3600,
+    ttl: TTLArg = 3600,
     invalidates_on: list["InvalidationRule"] | None = None,
     cache_if: Callable | None = None,
     cache_unless: Callable | None = None,
@@ -198,6 +204,10 @@ def cache_response(
     Pairs with KeyConstructor and InvalidationRule the same way as
     cache_result. Default key_constructor is ResponseCacheKeyConstructor
     (query params plus the view's URL kwargs).
+
+    ttl, cache_if, and cache_unless behave as in cache_result. ttl may be a
+    callable ttl(response, *args, **kwargs) returning an int or None, and the
+    predicates are called as predicate(response, *args, **kwargs).
 
     When set_cache_headers is True, the wrapper attaches the X-Cached-at,
     X-Cache-reset-at, and X-Cache-status headers to every returned

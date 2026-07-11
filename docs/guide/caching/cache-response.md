@@ -34,10 +34,10 @@ query string and URL kwargs return the cached response without running
 | Parameter | Type | Default | Effect |
 | --- | --- | --- | --- |
 | `key_constructor` | `KeyConstructor` subclass, instance, or dict of fields | `ResponseCacheKeyConstructor` | How cache keys are built. |
-| `ttl` | `int \| None` | `3600` | Time-to-live in seconds. `None` means no expiration. |
+| `ttl` | `int \| None \| Callable` | `3600` | Time-to-live in seconds. `None` means no expiration. A callable `ttl(response, *args, **kwargs)` returning `int` or `None` is evaluated on a cache miss to compute the ttl per call, and may be async on an async view. |
 | `invalidates_on` | `list[InvalidationRule]` | `None` | Rules that fire on Django model signals to invalidate the cache. |
-| `cache_if` | `Callable` | `None` | Predicate on the response. The response is cached only when this returns truthy. |
-| `cache_unless` | `Callable` | `None` | Predicate on the response. The response is skipped (not cached) when this returns truthy. |
+| `cache_if` | `Callable` | `None` | Predicate called as `cache_if(response, *args, **kwargs)`. The response is cached only when this returns truthy. |
+| `cache_unless` | `Callable` | `None` | Predicate called as `cache_unless(response, *args, **kwargs)`. The response is skipped (not cached) when this returns truthy. |
 | `set_cache_headers` | `bool` | `False` | When `True`, attach `X-Cached-at`, `X-Cache-reset-at`, and `X-Cache-status` headers to every returned response. |
 
 `cache_if` and `cache_unless` are mutually exclusive on a single
@@ -187,13 +187,18 @@ Skip caching for errors or empty payloads.
 class V(APIView):
     @cache_response(
         ttl=60,
-        cache_if=lambda response: response.status_code < 400,
+        cache_if=lambda response, *args, **kwargs: response.status_code < 400,
     )
     def get(self, request):
         return Response({"ok": True})
 ```
 
 For async views, both predicates may be `async def`.
+
+!!! warning "Breaking change"
+    `cache_if` and `cache_unless` now receive `(response, *args, **kwargs)`.
+    Predicates written for an earlier release that accept only the response
+    (for example `lambda response: ...`) must add `*args, **kwargs`.
 
 ## Surfacing cache status to the client
 
