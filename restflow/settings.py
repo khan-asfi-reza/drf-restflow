@@ -78,6 +78,12 @@ DEFAULTS: dict[str, Any] = {
             },
         },
     },
+    "SCHEMA": {
+        # HTTP methods that expose a view's filterset parameters in the
+        # OpenAPI schema. None means every method. A per-view
+        # filterset_schema_methods attribute overrides this default.
+        "FILTER_METHODS": None,
+    },
 }
 
 

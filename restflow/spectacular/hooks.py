@@ -2,6 +2,7 @@ import logging
 
 from restflow.spectacular.parameters import (
     build_filterset_parameters,
+    filterset_schema_applies,
     resolve_filterset_class,
 )
 
@@ -17,6 +18,8 @@ def add_filterset_parameters(result, generator, request=None, public=None, **kwa
     for path, _path_regex, method, view in generator._get_paths_and_endpoints():
         filterset_class = resolve_filterset_class(view)
         if filterset_class is None:
+            continue
+        if not filterset_schema_applies(view, method):
             continue
         try:
             params = build_filterset_parameters(filterset_class)

@@ -248,6 +248,33 @@ The list endpoint surfaces `name`, `name__icontains`, `name!`,
 `price__lte`, and the corresponding negation variants in the
 generated parameters list.
 
+### Restricting which methods show filter parameters
+
+By default the filter parameters appear on every HTTP method of a view
+that declares `filterset_class`, including `POST`, `PUT`, and `PATCH`.
+Set `filterset_schema_methods` on the view to limit them to specific
+methods (case-insensitive):
+
+```python
+class ProductView(AsyncModelViewSet):
+    serializer_class = ProductSerializer
+    filterset_class = ProductFilterSet
+    filterset_schema_methods = ["GET"]
+```
+
+To change the default for every view in the project, set
+`SCHEMA.FILTER_METHODS` in `RESTFLOW_SETTINGS`. A per-view
+`filterset_schema_methods` attribute overrides it. `None` means every
+method.
+
+```python
+RESTFLOW_SETTINGS = {
+    "SCHEMA": {
+        "FILTER_METHODS": ["GET"],
+    },
+}
+```
+
 ## Custom action endpoints
 
 drf-spectacular's `@action` decorator works without changes. The

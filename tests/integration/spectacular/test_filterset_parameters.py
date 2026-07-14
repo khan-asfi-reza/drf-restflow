@@ -2,6 +2,7 @@ import pytest
 
 spectacular = pytest.importorskip("drf_spectacular")
 
+from django.test import override_settings
 from django.urls import path
 from drf_spectacular.generators import SchemaGenerator
 from rest_framework import serializers as drf_serializers
@@ -11,7 +12,7 @@ from restflow.filters.fields import IntegerField, StringField
 from restflow.spectacular import RestflowAutoSchema
 from restflow.spectacular.hooks import add_filterset_parameters
 from restflow.spectacular.parameters import resolve_filterset_class
-from restflow.views import AsyncListAPIView
+from restflow.views import AsyncListAPIView, AsyncModelViewSet
 from tests.models import SampleModel
 
 
@@ -272,3 +273,61 @@ def test_postprocessing_hook_skips_param_already_in_operation():
     schema = add_filterset_parameters(schema, generator)
     parameter_names = [p["name"] for p in op["parameters"]]
     assert parameter_names.count("integer_field__gte") == 1
+
+
+def _params(schema, method):
+    op = schema["paths"]["/widgets/"].get(method, {})
+    return [p["name"] for p in op.get("parameters", [])]
+
+
+def _both_methods_view(**attrs):
+    body = {
+        "serializer_class": SampleSerializer,
+        "filterset_class": SampleFilterSet,
+        "schema": RestflowAutoSchema(),
+        "get_queryset": lambda self: SampleModel.objects.all().order_by("id"),
+        **attrs,
+    }
+    viewset = type("_FilterVS", (AsyncModelViewSet,), body)
+    return viewset.as_view({"get": "list", "post": "create"})
+
+
+def test_filter_params_on_all_methods_by_default():
+    schema = build_schema(_both_methods_view())
+    assert "integer_field__gte" in _params(schema, "get")
+    assert "integer_field__gte" in _params(schema, "post")
+
+
+def test_filterset_schema_methods_restricts_to_get():
+    schema = build_schema(_both_methods_view(filterset_schema_methods=["GET"]))
+    assert "integer_field__gte" in _params(schema, "get")
+    assert "integer_field__gte" not in _params(schema, "post")
+
+
+def test_filterset_schema_methods_is_case_insensitive():
+    schema = build_schema(_both_methods_view(filterset_schema_methods=["get"]))
+    assert "integer_field__gte" in _params(schema, "get")
+    assert "integer_field__gte" not in _params(schema, "post")
+
+
+@override_settings(RESTFLOW_SETTINGS={"SCHEMA": {"FILTER_METHODS": ["GET"]}})
+def test_global_filter_methods_setting_restricts():
+    schema = build_schema(_both_methods_view())
+    assert "integer_field__gte" in _params(schema, "get")
+    assert "integer_field__gte" not in _params(schema, "post")
+
+
+@override_settings(RESTFLOW_SETTINGS={"SCHEMA": {"FILTER_METHODS": ["GET"]}})
+def test_per_view_filterset_schema_methods_overrides_global():
+    schema = build_schema(
+        _both_methods_view(filterset_schema_methods=["GET", "POST"])
+    )
+    assert "integer_field__gte" in _params(schema, "get")
+    assert "integer_field__gte" in _params(schema, "post")
+
+
+def test_hook_respects_filterset_schema_methods():
+    view = _both_methods_view(filterset_schema_methods=["GET"])
+    schema = build_schema(view, hook=add_filterset_parameters)
+    assert "integer_field__gte" in _params(schema, "get")
+    assert "integer_field__gte" not in _params(schema, "post")

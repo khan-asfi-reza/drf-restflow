@@ -1,5 +1,5 @@
 from collections.abc import Iterable
-from typing import Any
+from typing import Any, cast
 
 from rest_framework import fields as drf_fields
 
@@ -22,6 +22,9 @@ from restflow.filters.fields import (
     TimeField,
 )
 from restflow.filters.filters import FilterSet
+from restflow.settings import restflow_settings
+
+_UNSET = object()
 
 LOOKUP_DESCRIPTIONS = {
     "exact": "equals",
@@ -75,7 +78,9 @@ def iterate_field_parameters(
 ) -> Iterable[dict[str, Any]]:
     """Yield one OpenAPI parameter dict per field declared on the FilterSet."""
     for field_name, field in filterset.fields.items():
-        yield field_to_parameter(field_name, field, separator)
+        yield field_to_parameter(
+            field_name, cast(Field, field), separator
+        )
 
 
 def field_to_parameter(
@@ -284,7 +289,25 @@ def resolve_filterset_class(view) -> type[FilterSet] | None:
         try:
             cls = getter()
             if cls is not None:
-                return cls
+                return cast("type[FilterSet]", cls)
         except Exception:
             pass
     return getattr(view, "filterset_class", None)
+
+
+def resolve_filterset_schema_methods(view) -> set[str] | None:
+    """Resolve which HTTP methods expose a view's filterset parameters in the schema. A view's filterset_schema_methods attribute wins over the RESTFLOW_SETTINGS SCHEMA FILTER_METHODS default. None means every method."""
+    raw: Any = getattr(view, "filterset_schema_methods", _UNSET)
+    if raw is _UNSET:
+        raw = restflow_settings.SCHEMA.FILTER_METHODS
+    if raw is None:
+        return None
+    return {str(method).upper() for method in raw}
+
+
+def filterset_schema_applies(view, method: str) -> bool:
+    """Return whether filterset parameters should be emitted for this view and HTTP method."""
+    methods = resolve_filterset_schema_methods(view)
+    if methods is None:
+        return True
+    return method.upper() in methods
