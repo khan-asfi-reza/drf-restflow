@@ -84,6 +84,10 @@ Issues = "https://github.com/khan-asfi-reza/drf-restflow/issues"
 Changelog = "https://github.com/khan-asfi-reza/drf-restflow/releases"
 
 
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
 [tool.setuptools]
 
 [tool.setuptools.dynamic]
@@ -94,6 +98,9 @@ version = { attr = "restflow.__version__" }
 where = ["."]
 include = ["restflow*"]
 exclude = ["tests*", "docker*"]
+
+[tool.setuptools.package-data]
+restflow = ["py.typed"]
 
 [dependency-groups]
 test = [
@@ -108,6 +115,11 @@ test = [
 lint = [
     "ruff>=0.9.9",
     "pre-commit>=3.7.0",
+]
+typecheck = [
+    "pyright>=1.1.400",
+    "django-stubs>=6.0",
+    "djangorestframework-stubs>=3.17",
 ]
 postgres = [
     "psycopg2-binary>=2.9.10",
@@ -144,6 +156,14 @@ docs = [
     "pymdown-extensions>=10.11.0",
     "mkdocs-macros-plugin>=1.3.7"
 ]
+
+[tool.pyright]
+include = ["restflow"]
+exclude = ["**/migrations", "**/__pycache__", "**/node_modules"]
+pythonVersion = "3.11"
+venvPath = "."
+venv = ".venv"
+typeCheckingMode = "standard"
 
 [tool.pytest.ini_options]
 markers = [

@@ -1,5 +1,5 @@
 import asyncio
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 import pytest
 from django.core.cache import cache
@@ -83,7 +83,7 @@ def test_cache_result_with_cache_if_skips_when_predicate_false():
             "namespace": "p4",
         },
         ttl=60,
-        cache_if=lambda r: r != 0,
+        cache_if=lambda r, *a, **k: r != 0,
     )
     def f(x):
         return x
@@ -99,13 +99,104 @@ def test_cache_result_with_cache_unless_skips_when_predicate_true():
             "namespace": "p5",
         },
         ttl=60,
-        cache_unless=lambda r: r is None,
+        cache_unless=lambda r, *a, **k: r is None,
     )
     def f(x):
         return None if x else "ok"
 
     assert f(False) == "ok"
     assert f(True) is None
+
+
+def test_cache_predicate_receives_result_and_call_args():
+    seen = {}
+
+    @cache_result(
+        key_constructor={"fields": {"args": ArgsKeyField("*")}, "namespace": "pargs"},
+        cache_if=lambda result, *args, **kwargs: (
+            seen.update(result=result, args=args) or True
+        ),
+        ttl=60,
+    )
+    def f(x, y):
+        return x + y
+
+    f(2, 3)
+    assert seen["result"] == 5
+    assert seen["args"] == (2, 3)
+
+
+def test_cache_result_ttl_callable_computes_from_result():
+    @cache_result(
+        key_constructor={"fields": {"args": ArgsKeyField("*")}, "namespace": "ttl1"},
+        ttl=lambda result, *a, **k: 5 if not result else 50,
+    )
+    def f(x):
+        return x
+
+    with patch.object(cache, "set", wraps=cache.set) as spy:
+        f(0)
+        f(9)
+    assert [c.kwargs["timeout"] for c in spy.call_args_list] == [5, 50]
+
+
+def test_cache_result_ttl_callable_computes_from_args():
+    @cache_result(
+        key_constructor={"fields": {"args": ArgsKeyField("*")}, "namespace": "ttl2"},
+        ttl=lambda result, x, *a, **k: 300 if x < 12 else 30,
+    )
+    def f(x):
+        return x * 2
+
+    with patch.object(cache, "set", wraps=cache.set) as spy:
+        f(5)
+        f(20)
+    assert [c.kwargs["timeout"] for c in spy.call_args_list] == [300, 30]
+
+
+def test_cache_result_ttl_callable_returns_none_caches_without_expiry():
+    @cache_result(
+        key_constructor={"fields": {"args": ArgsKeyField("*")}, "namespace": "ttl3"},
+        ttl=lambda result, *a, **k: None,
+    )
+    def f(x):
+        return x
+
+    with patch.object(cache, "set", wraps=cache.set) as spy:
+        f(1)
+    assert spy.call_args.kwargs["timeout"] is None
+
+
+def test_cache_result_async_ttl_callable_is_awaited():
+    async def compute_ttl(result, *a, **k):
+        return 7 if result else 70
+
+    @cache_result(
+        key_constructor={"fields": {"args": ArgsKeyField("*")}, "namespace": "ttl4"},
+        ttl=compute_ttl,
+    )
+    async def f(x):
+        return x
+
+    with patch.object(cache, "aset", wraps=cache.aset) as spy:
+        run_coro(f(0))
+        run_coro(f(3))
+    assert [c.kwargs["timeout"] for c in spy.call_args_list] == [70, 7]
+
+
+def test_cache_result_async_ttl_on_sync_wrapped_raises():
+    async def compute_ttl(result, *a, **k):
+        return 5
+
+    @cache_result(
+        key_constructor={"fields": {"args": ArgsKeyField("*")}, "namespace": "ttl5"},
+        ttl=compute_ttl,
+    )
+    def f(x):
+        return x
+
+    with pytest.raises(TypeError, match="async ttl"):
+        f(1)
 
 
 def test_cache_result_invalid_constructor_raises():
@@ -304,7 +395,7 @@ def test_cache_result_cache_if_with_async_predicate_runs():
     @cache_result(
         key_constructor={"fields": {}, "namespace": "p11"},
         ttl=60,
-        cache_if=lambda r: True,
+        cache_if=lambda r, *a, **k: True,
     )
     async def f():
         return 99

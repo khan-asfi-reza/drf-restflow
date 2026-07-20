@@ -1,10 +1,12 @@
 import logging
+from typing import Any
 
 from django.core.exceptions import ImproperlyConfigured
 from drf_spectacular.openapi import AutoSchema
 
 from restflow.spectacular.parameters import (
     build_filterset_parameters,
+    filterset_schema_applies,
     resolve_filterset_class,
 )
 
@@ -26,6 +28,8 @@ class RestflowAutoSchema(AutoSchema):
         parameters = list(super()._get_filter_parameters())
         filterset_class = resolve_filterset_class(self.view)
         if filterset_class is None:
+            return parameters
+        if not filterset_schema_applies(self.view, self.method):
             return parameters
 
         existing_keys = {
@@ -62,7 +66,7 @@ class RestflowAutoSchema(AutoSchema):
         get_request = getattr(view, "get_request_serializer_class", None)
         if callable(get_request):
             try:
-                cls = get_request()
+                cls: Any = get_request()
             except _SCHEMA_FAILURE_TYPES as exc:
                 logger.warning(
                     "RestflowAutoSchema: get_request_serializer_class on %r failed: %s",
@@ -88,7 +92,7 @@ class RestflowAutoSchema(AutoSchema):
         get_response = getattr(view, "get_response_serializer_class", None)
         if callable(get_response):
             try:
-                cls = get_response()
+                cls: Any = get_response()
             except _SCHEMA_FAILURE_TYPES as exc:
                 logger.warning(
                     "RestflowAutoSchema: get_response_serializer_class on %r failed: %s",
@@ -100,7 +104,7 @@ class RestflowAutoSchema(AutoSchema):
                 return cls(many=many) if many else cls()
 
         if many:
-            ser_cls = self.restflow_serializer_class()
+            ser_cls: Any = self.restflow_serializer_class()
             if ser_cls is not None:
                 return ser_cls(many=True)
         return super().get_response_serializers()

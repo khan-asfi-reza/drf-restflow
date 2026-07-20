@@ -54,6 +54,19 @@ class StubQuerySet:
         return StubAsyncIter(self._items).__aiter__()
 
 
+class CursorStubQuerySet(StubQuerySet):
+    def order_by(self, *fields):
+        return self
+
+    def filter(self, **kwargs):
+        return self
+
+
+class Row:
+    def __init__(self, pk):
+        self.id = pk
+
+
 def test_page_number_with_zero_count_returns_empty_page():
     qs = StubQuerySet([])
     paginator = PageNumberPagination()
@@ -228,9 +241,24 @@ def test_async_paginator_zero_count_yields_one_page():
     assert paginator.num_pages == 1
 
 
-def test_cursor_pagination_falls_back_to_sync_via_async_hook():
+def test_cursor_pagination_apaginate_is_native_async_first_page():
+    qs = CursorStubQuerySet([Row(i) for i in range(5)])
     paginator = CursorPagination()
-    qs = []
+    paginator.ordering = "id"
+    paginator.page_size = 2
     request = make_request()
-    result = run_coro(paginator.apaginate_queryset(qs, request))
-    assert result is None or result == []
+
+    page = run_coro(paginator.apaginate_queryset(qs, request))
+
+    assert [row.id for row in page] == [0, 1]
+    assert paginator.has_next is True
+    assert paginator.has_previous is False
+
+
+def test_cursor_pagination_apaginate_returns_none_without_page_size():
+    paginator = CursorPagination()
+    paginator.ordering = "id"
+    paginator.page_size = None
+    request = make_request()
+
+    assert run_coro(paginator.apaginate_queryset([], request)) is None

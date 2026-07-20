@@ -3,7 +3,7 @@ import inspect
 from abc import ABC, abstractmethod
 from collections.abc import Callable
 from contextlib import suppress
-from typing import Any
+from typing import Any, cast
 
 from django.db import models
 from django.http import QueryDict
@@ -87,8 +87,11 @@ class CacheKeyField(ABC):
             # Dictionary items are joined by double pipe `||`,
             # and key-value pairs are joined by colon `:`.
             # For example: {"a": 1, "b": 2} -> "a:1||b:2"
-            canonical = self.normalize(
-                {k: self.stringify(v) for k, v in value.items()}
+            canonical = cast(
+                dict,
+                self.normalize(
+                    {k: self.stringify(v) for k, v in value.items()}
+                ),
             )
             string = "||".join(f"{k}:{v}" for k, v in canonical.items())
 
@@ -99,7 +102,7 @@ class CacheKeyField(ABC):
             string = ",".join(canonical)
 
         else:
-            string = self.normalize(value)
+            string = cast(str, self.normalize(value))
 
         return hash_string(string) if self.hash_value else string
 
@@ -487,7 +490,7 @@ class DjangoModelKeyField(CacheKeyField):
                 shape = DjangoModelKeyField(User)
     """
 
-    def __init__(self, model_class):
+    def __init__(self, model_class: type[models.Model]):
         super().__init__(partition=False, hash_value=True, sort_lists=True)
         self.model_class = model_class
 

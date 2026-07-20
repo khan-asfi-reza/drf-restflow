@@ -1,16 +1,37 @@
+from typing import TYPE_CHECKING, Any, Protocol, cast
+
 from asgiref.sync import sync_to_async
 from django.core.exceptions import ImproperlyConfigured
+from django.http import HttpRequest
 from django.utils.functional import classproperty
 from rest_framework import exceptions, status
+from rest_framework.pagination import BasePagination
+from rest_framework.request import Request
 from rest_framework.response import Response
+from rest_framework.serializers import BaseSerializer
 from rest_framework.views import APIView as DRFAPIView
 
 from restflow.helpers import maybe_await
 from restflow.permissions import has_object_permission, has_permission
 from restflow.throttling import throttler_allow_request
 
+if TYPE_CHECKING:
+    from rest_framework.authentication import BaseAuthentication
+    from rest_framework.request import ForcedAuthentication
 
-def perform_post_fetches(items, post_fetches, *, many):
+    _HelpersBase = DRFAPIView
+
+    class _AuthenticatableRequest(Protocol):
+        _authenticator: "BaseAuthentication | ForcedAuthentication | None"
+
+        def _not_authenticated(self) -> None: ...
+else:
+    _HelpersBase = object
+
+
+def perform_post_fetches(
+    items: Any, post_fetches: Any, *, many: bool
+) -> Any:
     if not post_fetches:
         return items
     target = items if many else [items]
@@ -19,7 +40,9 @@ def perform_post_fetches(items, post_fetches, *, many):
     return target if many else target[0]
 
 
-async def aperform_post_fetches(items, post_fetches, *, many):
+async def aperform_post_fetches(
+    items: Any, post_fetches: Any, *, many: bool
+) -> Any:
     if not post_fetches:
         return items
     target = items if many else [items]
@@ -32,46 +55,50 @@ async def aperform_post_fetches(items, post_fetches, *, many):
     return target if many else target[0]
 
 
-class APIViewHelpersMixin:
+class APIViewHelpersMixin(_HelpersBase):
 
-    serializer_class = None
-    request_serializer_class = None
-    response_serializer_class = None
-    pagination_class = None
+    serializer_class: type[BaseSerializer[Any]] | None = None
+    request_serializer_class: type[BaseSerializer[Any]] | None = None
+    response_serializer_class: type[BaseSerializer[Any]] | None = None
+    pagination_class: type[BasePagination] | None = None
 
-    def get_context(self):
+    def get_context(self) -> dict[str, Any]:
         """
         Returns the context that should be used by the serializer.
         """
         return {"request": self.request, "view": self}
 
-    def get_serializer_class(self):
+    def get_serializer_class(self) -> type[BaseSerializer[Any]]:
         """
         Returns the class used to serialize the response payload.
         """
-        return self.serializer_class
+        return cast("type[BaseSerializer[Any]]", self.serializer_class)
 
-    def get_request_serializer_class(self):
+    def get_request_serializer_class(self) -> type[BaseSerializer[Any]]:
         """
         Returns the class used to validate the request body.
         """
         return self.request_serializer_class or self.get_serializer_class()
 
-    def get_response_serializer_class(self):
+    def get_response_serializer_class(self) -> type[BaseSerializer[Any]]:
         """
         Returns the class used to serialize the response payload.
         """
         return self.response_serializer_class or self.get_serializer_class()
 
-    def get_pagination_class(self):
+    def get_pagination_class(self) -> type[BasePagination] | None:
         """
         Returns the pagination class that should be used for list responses.
         """
         return self.pagination_class
 
     def get_serializer(
-        self, *args, serializer_class=None, direction=None, **kwargs
-    ):
+        self,
+        *args: Any,
+        serializer_class: type[BaseSerializer[Any]] | None = None,
+        direction: str | None = None,
+        **kwargs: Any,
+    ) -> BaseSerializer[Any]:
         """
         Returns the serializer instance that should be used for the action.
         """
@@ -92,8 +119,12 @@ class APIViewHelpersMixin:
         return serializer_class(*args, **kwargs)
 
     def validated_serializer(
-        self, *, data=None, serializer_class=None, **kwargs
-    ):
+        self,
+        *,
+        data: Any = None,
+        serializer_class: type[BaseSerializer[Any]] | None = None,
+        **kwargs: Any,
+    ) -> BaseSerializer[Any]:
         """
         Returns a serializer with the request data validated.
         """
@@ -110,14 +141,14 @@ class APIViewHelpersMixin:
 
     def serialized_response(
         self,
-        instance,
+        instance: Any,
         *,
-        many=False,
-        status=status.HTTP_200_OK,
-        serializer_class=None,
-        post_fetches=None,
-        headers=None,
-    ):
+        many: bool = False,
+        status: int = status.HTTP_200_OK,
+        serializer_class: type[BaseSerializer[Any]] | None = None,
+        post_fetches: Any = None,
+        headers: Any = None,
+    ) -> Response:
         """
         Returns a Response containing the serialized instance.
         """
@@ -132,13 +163,13 @@ class APIViewHelpersMixin:
 
     def paginated_response(
         self,
-        queryset,
+        queryset: Any,
         *,
-        serializer_class=None,
-        pagination_class=None,
-        post_fetches=None,
-        headers=None,
-    ):
+        serializer_class: type[BaseSerializer[Any]] | None = None,
+        pagination_class: type[BasePagination] | None = None,
+        post_fetches: Any = None,
+        headers: Any = None,
+    ) -> Response:
         """
         Returns a paginated Response for the given queryset.
         """
@@ -182,10 +213,12 @@ class APIView(APIViewHelpersMixin, DRFAPIView):
 class AsyncAPIView(APIViewHelpersMixin, DRFAPIView):
 
     @classproperty
-    def view_is_async(cls):  # noqa: N805
+    def view_is_async(cls):  # noqa: N805  # pyright: ignore[reportIncompatibleVariableOverride]
         return True
 
-    async def dispatch(self, request, *args, **kwargs):
+    async def dispatch(  # pyright: ignore[reportIncompatibleMethodOverride]
+        self, request: HttpRequest, *args: Any, **kwargs: Any
+    ) -> Response:
         """
         Async equivalent of APIView.dispatch.
         """
@@ -197,9 +230,11 @@ class AsyncAPIView(APIViewHelpersMixin, DRFAPIView):
 
         try:
             await self.ainitial(request, *args, **kwargs)
-            if request.method.lower() in self.http_method_names:
+            if cast(str, request.method).lower() in self.http_method_names:
                 handler = getattr(
-                    self, request.method.lower(), self.http_method_not_allowed
+                    self,
+                    cast(str, request.method).lower(),
+                    self.http_method_not_allowed,
                 )
             else:
                 handler = self.http_method_not_allowed
@@ -212,7 +247,9 @@ class AsyncAPIView(APIViewHelpersMixin, DRFAPIView):
         )
         return self.response
 
-    async def ainitial(self, request, *args, **kwargs):
+    async def ainitial(
+        self, request: Request, *args: Any, **kwargs: Any
+    ) -> None:
         """
         Runs anything that needs to occur prior to calling the method handler.
         """
@@ -228,11 +265,12 @@ class AsyncAPIView(APIViewHelpersMixin, DRFAPIView):
         await self.acheck_permissions(request)
         await self.acheck_throttles(request)
 
-    async def aperform_authentication(self, request):
+    async def aperform_authentication(self, request: Request) -> None:
         """
         Performs authentication on the incoming request.
         """
-        for authenticator in request.authenticators:
+        internal = cast("_AuthenticatableRequest", request)
+        for authenticator in request.authenticators or ():
             aauth = getattr(authenticator, "aauthenticate", None)
             try:
                 if aauth is not None:
@@ -242,15 +280,15 @@ class AsyncAPIView(APIViewHelpersMixin, DRFAPIView):
                         authenticator.authenticate, thread_sensitive=True
                     )(request)
             except exceptions.APIException:
-                request._not_authenticated()
+                internal._not_authenticated()
                 raise
             if user_auth_tuple is not None:
-                request._authenticator = authenticator
+                internal._authenticator = authenticator
                 request.user, request.auth = user_auth_tuple
                 return
-        request._not_authenticated()
+        internal._not_authenticated()
 
-    async def acheck_permissions(self, request):
+    async def acheck_permissions(self, request: Request) -> None:
         """
         Checks if the request should be permitted, raising on failure.
         """
@@ -265,7 +303,9 @@ class AsyncAPIView(APIViewHelpersMixin, DRFAPIView):
                     code=getattr(permission, "code", None),
                 )
 
-    async def acheck_object_permissions(self, request, obj):
+    async def acheck_object_permissions(
+        self, request: Request, obj: Any
+    ) -> None:
         """
         Checks if the request should be permitted for a given object.
         """
@@ -280,7 +320,7 @@ class AsyncAPIView(APIViewHelpersMixin, DRFAPIView):
                     code=getattr(permission, "code", None),
                 )
 
-    async def acheck_throttles(self, request):
+    async def acheck_throttles(self, request: Request) -> None:
         """
         Checks the throttles on the incoming request.
         """
@@ -295,9 +335,9 @@ class AsyncAPIView(APIViewHelpersMixin, DRFAPIView):
         if throttle_durations:
             durations = [d for d in throttle_durations if d is not None]
             duration = max(durations, default=None)
-            self.throttled(request, duration)
+            self.throttled(request, cast(float, duration))
 
-    async def ahandle_exception(self, exc):
+    async def ahandle_exception(self, exc: Exception) -> Response:
         """
         Handles any exception that occurs, by returning an appropriate response,
         or re-raising the error.
@@ -307,7 +347,7 @@ class AsyncAPIView(APIViewHelpersMixin, DRFAPIView):
         ):
             auth_header = self.get_authenticate_header(self.request)
             if auth_header:
-                exc.auth_header = auth_header
+                exc.auth_header = auth_header  # pyright: ignore[reportAttributeAccessIssue]
             else:
                 exc.status_code = status.HTTP_403_FORBIDDEN
 
@@ -320,15 +360,21 @@ class AsyncAPIView(APIViewHelpersMixin, DRFAPIView):
         response.exception = True
         return response
 
-    async def afinalize_response(self, request, response, *args, **kwargs):
+    async def afinalize_response(
+        self, request: Request, response: Response, *args: Any, **kwargs: Any
+    ) -> Response:
         """
         Returns the final response object after any processing.
         """
         return self.finalize_response(request, response, *args, **kwargs)
 
     async def avalidated_serializer(
-        self, *, data=None, serializer_class=None, **kwargs
-    ):
+        self,
+        *,
+        data: Any = None,
+        serializer_class: type[BaseSerializer[Any]] | None = None,
+        **kwargs: Any,
+    ) -> BaseSerializer[Any]:
         """
         Returns a serializer with the request data validated, awaiting ais_valid
         when available.
@@ -352,14 +398,14 @@ class AsyncAPIView(APIViewHelpersMixin, DRFAPIView):
 
     async def aserialized_response(
         self,
-        instance,
+        instance: Any,
         *,
-        many=False,
-        status=status.HTTP_200_OK,
-        serializer_class=None,
-        post_fetches=None,
-        headers=None,
-    ):
+        many: bool = False,
+        status: int = status.HTTP_200_OK,
+        serializer_class: type[BaseSerializer[Any]] | None = None,
+        post_fetches: Any = None,
+        headers: Any = None,
+    ) -> Response:
         """
         Returns a Response containing the serialized instance, awaiting any
         post-fetch helpers.
@@ -375,13 +421,13 @@ class AsyncAPIView(APIViewHelpersMixin, DRFAPIView):
 
     async def apaginated_response(
         self,
-        queryset,
+        queryset: Any,
         *,
-        serializer_class=None,
-        pagination_class=None,
-        post_fetches=None,
-        headers=None,
-    ):
+        serializer_class: type[BaseSerializer[Any]] | None = None,
+        pagination_class: type[BasePagination] | None = None,
+        post_fetches: Any = None,
+        headers: Any = None,
+    ) -> Response:
         """
         Returns a paginated Response for the given queryset, using async
         paginator hooks when available.

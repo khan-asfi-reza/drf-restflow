@@ -11,7 +11,9 @@ try:
     from rest_framework_simplejwt.settings import (
         api_settings as _simplejwt_settings,
     )
-    from rest_framework_simplejwt.tokens import get_md5_hash_password
+    from rest_framework_simplejwt.tokens import (
+        get_md5_hash_password,  # pyright: ignore[reportPrivateImportUsage]
+    )
 except ImportError as exc:  # pragma: no cover
     msg = (
         "djangorestframework-simplejwt is not installed. "

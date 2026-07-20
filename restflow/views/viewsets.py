@@ -1,12 +1,16 @@
+from collections.abc import Sequence
 from dataclasses import dataclass
 from functools import update_wrapper
-from typing import Any
+from typing import TYPE_CHECKING, Any, Protocol, cast
 
 import django
+from django.db.models import QuerySet
 from django.utils.decorators import classonlymethod
 from django.views.decorators.csrf import csrf_exempt
 from rest_framework import generics as drf_generics
 from rest_framework import viewsets as drf_viewsets
+from rest_framework.pagination import BasePagination
+from rest_framework.serializers import BaseSerializer
 
 from restflow.views.generics import AsyncGenericAPIView
 from restflow.views.mixins import (
@@ -22,6 +26,32 @@ from restflow.views.mixins import (
     UpdateModelMixin,
 )
 from restflow.views.views import APIView, APIViewHelpersMixin, AsyncAPIView
+
+if TYPE_CHECKING:
+    from django.views import View
+
+    class _ActionConfigBase:
+        serializer_class: type[BaseSerializer[Any]] | None
+
+        def get_permissions(self) -> Sequence[Any]: ...
+
+        def get_throttles(self) -> list[Any]: ...
+
+        def get_parsers(self) -> list[Any]: ...
+
+        def get_renderers(self) -> list[Any]: ...
+
+    class _ViewSetView(Protocol):
+        cls: type
+        initkwargs: dict[str, Any]
+        actions: dict[str, str]
+        login_required: bool
+
+        def __call__(
+            self, request: Any, *args: Any, **kwargs: Any
+        ) -> Any: ...
+else:
+    _ActionConfigBase = object
 
 
 @dataclass(frozen=True)
@@ -65,7 +95,7 @@ class ActionConfig:
     queryset: Any = None
 
 
-class ActionConfigResolutionMixin:
+class ActionConfigResolutionMixin(_ActionConfigBase):
     """
     Resolution helpers shared by sync and async viewsets.
 
@@ -80,10 +110,10 @@ class ActionConfigResolutionMixin:
     detail = None
     basename = None
 
-    def _action_config(self):
+    def _action_config(self) -> Any:
         return self.action_configs.get(getattr(self, "action", None))
 
-    def get_serializer_class(self):
+    def get_serializer_class(self) -> type[BaseSerializer[Any]]:
         """
         Returns the class used to serialize the response payload for the
         current action.
@@ -94,9 +124,9 @@ class ActionConfigResolutionMixin:
         parent = getattr(super(), "get_serializer_class", None)
         if parent is not None:
             return parent()
-        return self.serializer_class
+        return cast("type[BaseSerializer[Any]]", self.serializer_class)
 
-    def get_request_serializer_class(self):
+    def get_request_serializer_class(self) -> type[BaseSerializer[Any]]:
         """
         Returns the class used to validate the request body for the current
         action.
@@ -109,7 +139,7 @@ class ActionConfigResolutionMixin:
             return parent()
         return self.get_serializer_class()
 
-    def get_response_serializer_class(self):
+    def get_response_serializer_class(self) -> type[BaseSerializer[Any]]:
         """
         Returns the class used to serialize the response payload for the
         current action.
@@ -122,7 +152,7 @@ class ActionConfigResolutionMixin:
             return parent()
         return self.get_serializer_class()
 
-    def get_permissions(self):
+    def get_permissions(self) -> Sequence[Any]:
         """
         Returns the list of permissions that this view requires for the current
         action.
@@ -132,7 +162,7 @@ class ActionConfigResolutionMixin:
             return [p() for p in cfg.permission_classes]
         return super().get_permissions()
 
-    def get_throttles(self):
+    def get_throttles(self) -> list[Any]:
         """
         Returns the list of throttle instances for the current action.
         """
@@ -141,7 +171,7 @@ class ActionConfigResolutionMixin:
             return [t() for t in cfg.throttle_classes]
         return super().get_throttles()
 
-    def get_parsers(self):
+    def get_parsers(self) -> list[Any]:
         """
         Returns the list of parser instances for the current action.
         """
@@ -150,7 +180,7 @@ class ActionConfigResolutionMixin:
             return [p() for p in cfg.parser_classes]
         return super().get_parsers()
 
-    def get_renderers(self):
+    def get_renderers(self) -> list[Any]:
         """
         Returns the list of renderer instances for the current action.
         """
@@ -159,7 +189,7 @@ class ActionConfigResolutionMixin:
             return [r() for r in cfg.renderer_classes]
         return super().get_renderers()
 
-    def get_pagination_class(self):
+    def get_pagination_class(self) -> type[BasePagination] | None:
         """
         Returns the pagination class for the current action.
         """
@@ -171,7 +201,7 @@ class ActionConfigResolutionMixin:
             return parent()
         return getattr(self, "pagination_class", None)
 
-    def get_queryset(self):
+    def get_queryset(self) -> QuerySet[Any]:
         """
         Returns the queryset that should be used for the current action.
         """
@@ -179,13 +209,13 @@ class ActionConfigResolutionMixin:
         if cfg is not None and cfg.queryset is not None:
             qs = cfg.queryset
             if callable(qs):
-                return qs(self)
+                return cast("QuerySet[Any]", qs(self))
             if hasattr(qs, "all"):
                 return qs.all()
             return qs
         parent = getattr(super(), "get_queryset", None)
         if parent is not None:
-            return parent()
+            return cast("QuerySet[Any]", parent())
         msg = (
             f"{self.__class__.__name__} has no `queryset` and no "
             "`get_queryset()` method. Set `queryset` on the class, "
@@ -195,7 +225,7 @@ class ActionConfigResolutionMixin:
         raise AssertionError(msg)
 
     @property
-    def paginator(self):
+    def paginator(self) -> BasePagination | None:
         if not hasattr(self, "_paginator"):
             cls = self.get_pagination_class()
             self._paginator = cls() if cls is not None else None
@@ -222,7 +252,11 @@ class AsyncViewSetMixin(ActionConfigResolutionMixin, drf_viewsets.ViewSetMixin):
     """
 
     @classonlymethod
-    def as_view(cls, actions=None, **initkwargs):  # noqa: N805
+    def as_view(  # pyright: ignore[reportIncompatibleMethodOverride]
+        cls,  # noqa: N805
+        actions: dict[str, str] | None = None,
+        **initkwargs: Any,
+    ):
         """
         Returns an async view callable that binds the given actions map to
         HTTP method names and dispatches via the async pipeline.
@@ -237,7 +271,7 @@ class AsyncViewSetMixin(ActionConfigResolutionMixin, drf_viewsets.ViewSetMixin):
         actions = dict(actions)
 
         for key in initkwargs:
-            if key in cls.http_method_names:
+            if key in cast("type[View]", cls).http_method_names:
                 msg = (
                     f"You tried to pass in the {key} method name as a "
                     f"keyword argument to {cls.__name__}(). Don't do that."
@@ -257,8 +291,8 @@ class AsyncViewSetMixin(ActionConfigResolutionMixin, drf_viewsets.ViewSetMixin):
         if "get" in actions and "head" not in actions:
             actions["head"] = actions["get"]
 
-        async def view(request, *args, **kwargs):
-            self = cls(**initkwargs)
+        async def view(request: Any, *args: Any, **kwargs: Any) -> Any:
+            self: Any = cls(**initkwargs)
             self.action_map = actions
 
             for method, action in actions.items():
@@ -272,14 +306,15 @@ class AsyncViewSetMixin(ActionConfigResolutionMixin, drf_viewsets.ViewSetMixin):
             return await self.dispatch(request, *args, **kwargs)
 
         update_wrapper(view, cls, updated=())
-        update_wrapper(view, cls.dispatch, assigned=())
+        update_wrapper(view, cast("type[View]", cls).dispatch, assigned=())
 
-        view.cls = cls
-        view.initkwargs = initkwargs
-        view.actions = actions
+        typed_view = cast("_ViewSetView", view)
+        typed_view.cls = cls
+        typed_view.initkwargs = initkwargs
+        typed_view.actions = actions
 
         if django.VERSION >= (5, 1):
-            view.login_required = False
+            typed_view.login_required = False
 
         return csrf_exempt(view)
 
@@ -333,14 +368,14 @@ class ModelViewSet(
     """
 
 
-class AsyncViewSet(AsyncViewSetMixin, AsyncAPIView):
+class AsyncViewSet(AsyncViewSetMixin, AsyncAPIView):  # pyright: ignore[reportIncompatibleMethodOverride]
     """
     The base ViewSet class with async dispatch. Does not provide any actions
     by default.
     """
 
 
-class AsyncGenericViewSet(AsyncViewSetMixin, AsyncGenericAPIView):
+class AsyncGenericViewSet(AsyncViewSetMixin, AsyncGenericAPIView):  # pyright: ignore[reportIncompatibleMethodOverride]
     """
     The GenericViewSet class with async dispatch. Does not provide any actions
     by default, but does include the base set of generic view behavior such as
@@ -348,7 +383,7 @@ class AsyncGenericViewSet(AsyncViewSetMixin, AsyncGenericAPIView):
     """
 
 
-class AsyncReadOnlyModelViewSet(
+class AsyncReadOnlyModelViewSet(  # pyright: ignore[reportIncompatibleMethodOverride]
     AsyncRetrieveModelMixin,
     AsyncListModelMixin,
     AsyncGenericViewSet,
@@ -359,7 +394,7 @@ class AsyncReadOnlyModelViewSet(
     """
 
 
-class AsyncModelViewSet(
+class AsyncModelViewSet(  # pyright: ignore[reportIncompatibleMethodOverride]
     AsyncCreateModelMixin,
     AsyncRetrieveModelMixin,
     AsyncUpdateModelMixin,

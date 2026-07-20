@@ -6,7 +6,8 @@ import inspect
 import logging
 import pkgutil
 import threading
-from typing import TYPE_CHECKING, Any, TypedDict
+from collections.abc import Coroutine
+from typing import TYPE_CHECKING, Any, TypedDict, cast
 
 from django.apps import apps
 from django.db import models, transaction
@@ -46,7 +47,7 @@ class CacheRegistry:
     rule's Dispatcher whenever a signal fires.
     """
 
-    _instance: CacheRegistry = None
+    _instance: CacheRegistry | None = None
     _counter = 0
     _lock = threading.Lock()
 
@@ -63,7 +64,7 @@ class CacheRegistry:
                 if cls._instance is None:
                     cls._instance = super().__new__(cls)
                     cls._initialized = False
-        return cls._instance
+        return cast(CacheRegistry, cls._instance)
 
     def __new__(cls):
         return cls._create_instance()
@@ -305,7 +306,7 @@ class CacheRegistry:
         signal_type: CacheRegistry.SignalTypes,
         instance_created: bool,
         update_fields: frozenset | None,
-    ) -> None:
+    ) -> Coroutine[Any, Any, None] | None:
         # Custom invalidator runner.
         # If custom invalidator function is defined in rules, call it, otherwise use default behavior.
         invalidation_rule = rule["invalidation_rule"]
@@ -460,7 +461,7 @@ class CacheRegistry:
         dispatcher_per_group: dict[tuple, Dispatcher] = {}
 
         for rule_id in rule_ids:
-            rule: RuleType = self.get_rule(rule_id)
+            rule = cast(RuleType, self.get_rule(rule_id))
 
             should_run = self._should_run_rule(
                 instance=instance,

@@ -95,6 +95,7 @@ class FilterOptions:
     """
 
     def __init__(self, options: list[Any] | None):
+        options = cast("list[Any]", options)
         # Models and fields
         self.model: type[Model] = getattr_multi_source(options, "model", None)
         self.fields: Union[
@@ -172,9 +173,11 @@ class FilterMetaClass(SerializerMetaclass):
         attrs["_meta"] = meta_options
         # Python 3.14>= attrs do not contain __annotations__
         # python3.14, annotations are handled lazily
-        klass = type.__new__(cls, name, bases, attrs)
+        klass = cast("type[FilterSet]", type.__new__(cls, name, bases, attrs))
         declared_fields = cls._get_all_fields(klass, bases, attrs, meta_options)
-        klass._declared_fields = declared_fields
+        klass._declared_fields = cast(
+            "dict[str, drf_fields.Field]", declared_fields
+        )
         cls._validate_string_methods(klass, declared_fields)
         return klass
 
@@ -290,7 +293,7 @@ class FilterMetaClass(SerializerMetaclass):
                 filter_fields = cls._extract_django_model_fields(
                     model_fields=model_fields,
                     options=options,
-                    exclude_fields=set(field.negate or []),
+                    exclude_fields=set(field.exclude),
                     extra_kwargs=field.extra_kwargs,
                     field_name_prefix=field_name,
                 )
@@ -710,7 +713,7 @@ class FilterSet(Serializer, metaclass=FilterMetaClass):
     def __init__(
         self,
         data=None,
-        request: Request | WSGIRequest | HttpRequest = None,
+        request: Request | WSGIRequest | HttpRequest | None = None,
     ):
         self.request = request
         # Flexibility for users
@@ -720,8 +723,8 @@ class FilterSet(Serializer, metaclass=FilterMetaClass):
             )
         super().__init__(data=data, context={"request": request})
 
-    def get_options(self):
-        return getattr(self, "_meta", None)
+    def get_options(self) -> FilterOptions:
+        return cast(FilterOptions, getattr(self, "_meta", None))
 
     def many_init(self):
         msg = "`many=True` is not supported."
@@ -817,7 +820,7 @@ class FilterSet(Serializer, metaclass=FilterMetaClass):
 
         q_objects = []
         for field_name, value in validated_data.items():
-            field = self.fields.get(field_name)
+            field = cast("Field | None", self.fields.get(field_name))
             if field is None or field_name in ignore:
                 continue  # pragma: no cover
             result = require_sync(
@@ -856,7 +859,7 @@ class FilterSet(Serializer, metaclass=FilterMetaClass):
 
         q_objects = []
         for field_name, value in validated_data.items():
-            field = self.fields.get(field_name)
+            field = cast("Field | None", self.fields.get(field_name))
             if field is None or field_name in ignore:
                 continue  # pragma: no cover
             result = await maybe_await(

@@ -1,12 +1,21 @@
 import math
+from typing import TYPE_CHECKING, Any, cast
 
 from asgiref.sync import sync_to_async
+from django.db.models import QuerySet
 from django.utils.translation import gettext_lazy as _
 from rest_framework import pagination as drf_pagination
 from rest_framework.exceptions import NotFound
+from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.settings import api_settings
 from rest_framework.utils.urls import remove_query_param, replace_query_param
+from rest_framework.views import APIView
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
+
+    from django.core.paginator import Page, Paginator
 
 
 class BasePagination(drf_pagination.BasePagination):
@@ -15,7 +24,12 @@ class BasePagination(drf_pagination.BasePagination):
     Adds an async apaginate_queryset hook that defaults to running the sync paginate_queryset in a thread.
     """
 
-    async def apaginate_queryset(self, queryset, request, view=None):
+    async def apaginate_queryset(
+        self,
+        queryset: QuerySet[Any],
+        request: Request,
+        view: APIView | None = None,
+    ) -> list[Any] | None:
         """Returns a list of items for a single page of the queryset, or None if pagination is disabled."""
         return await sync_to_async(
             self.paginate_queryset, thread_sensitive=True
@@ -23,32 +37,37 @@ class BasePagination(drf_pagination.BasePagination):
 
 
 class AsyncPage:
-    def __init__(self, object_list, number, paginator):
+    def __init__(
+        self,
+        object_list: list[Any],
+        number: int,
+        paginator: "AsyncPaginator",
+    ) -> None:
         self.object_list = object_list
         self.number = number
         self.paginator = paginator
 
-    def has_next(self):
+    def has_next(self) -> bool:
         return self.number < self.paginator.num_pages
 
-    def has_previous(self):
+    def has_previous(self) -> bool:
         return self.number > 1
 
-    def next_page_number(self):
+    def next_page_number(self) -> int:
         return self.number + 1
 
-    def previous_page_number(self):
+    def previous_page_number(self) -> int:
         return self.number - 1
 
-    def __iter__(self):
+    def __iter__(self) -> "Iterator[Any]":
         return iter(self.object_list)
 
-    def __len__(self):
+    def __len__(self) -> int:
         return len(self.object_list)
 
 
 class AsyncPaginator:
-    def __init__(self, count, per_page):
+    def __init__(self, count: int, per_page: int) -> None:
         self.count = count
         self.per_page = per_page
         self.num_pages = max(1, math.ceil(count / per_page)) if count else 1
@@ -59,7 +78,12 @@ class PageNumberPagination(BasePagination, drf_pagination.PageNumberPagination):
     A simple page number based style that supports page numbers as query parameters.
     Adds an async apaginate_queryset that uses async ORM (acount, async iteration) instead of sync_to_async.
     """
-    async def apaginate_queryset(self, queryset, request, view=None):
+    async def apaginate_queryset(
+        self,
+        queryset: QuerySet[Any],
+        request: Request,
+        view: APIView | None = None,
+    ) -> list[Any] | None:
         """Returns a list of items for the requested page, or None if pagination is disabled."""
         self.request = request
         page_size = self.get_page_size(request)
@@ -68,7 +92,9 @@ class PageNumberPagination(BasePagination, drf_pagination.PageNumberPagination):
 
         count = await queryset.acount()
         paginator = AsyncPaginator(count=count, per_page=page_size)
-        page_number = self.get_page_number(request, paginator)
+        page_number = self.get_page_number(
+            request, cast("Paginator[Any]", paginator)
+        )
         try:
             page_number = int(page_number)
         except (TypeError, ValueError) as exc:
@@ -93,7 +119,10 @@ class PageNumberPagination(BasePagination, drf_pagination.PageNumberPagination):
         offset = (page_number - 1) * page_size
         sliced = queryset[offset : offset + page_size]
         object_list = [obj async for obj in sliced]
-        self.page = AsyncPage(object_list, page_number, paginator)
+        self.page = cast(
+            "Page[Any]",
+            AsyncPage(object_list, page_number, paginator),
+        )
         if paginator.num_pages > 1 and self.template is not None:
             self.display_page_controls = True
         return list(self.page)
@@ -104,7 +133,12 @@ class LimitOffsetPagination(BasePagination, drf_pagination.LimitOffsetPagination
     A limit/offset based style.
     Adds an async apaginate_queryset that uses async ORM (acount, async iteration) instead of sync_to_async.
     """
-    async def apaginate_queryset(self, queryset, request, view=None):
+    async def apaginate_queryset(
+        self,
+        queryset: QuerySet[Any],
+        request: Request,
+        view: APIView | None = None,
+    ) -> list[Any] | None:
         """Returns a list of items for the current limit/offset window, or None if pagination is disabled."""
         self.request = request
         self.limit = self.get_limit(request)
@@ -125,8 +159,85 @@ class LimitOffsetPagination(BasePagination, drf_pagination.LimitOffsetPagination
 class CursorPagination(BasePagination, drf_pagination.CursorPagination):
     """
     The cursor pagination implementation is necessarily complex.
-    Inherits DRF's sync paginate_queryset; the async surface defaults to sync_to_async.
+    Adds an async apaginate_queryset that mirrors DRF's paginate_queryset using async ORM iteration instead of sync_to_async.
     """
+
+    async def apaginate_queryset(  # noqa: PLR0912, PLR0915
+        self,
+        queryset: QuerySet[Any],
+        request: Request,
+        view: APIView | None = None,
+    ) -> list[Any] | None:
+        """Returns a list of items for the current cursor window, or None if pagination is disabled."""
+        self.request = request
+        self.page_size = self.get_page_size(request)
+        if not self.page_size:
+            return None
+
+        self.base_url = request.build_absolute_uri()
+        self.ordering = self.get_ordering(
+            request, queryset, cast("APIView", view)
+        )
+
+        self.cursor = self.decode_cursor(request)
+        if self.cursor is None:
+            offset, reverse, current_position = 0, False, None
+        else:
+            offset, reverse, current_position = self.cursor
+        current_position = cast("str | None", current_position)
+
+        if reverse:
+            queryset = queryset.order_by(
+                *drf_pagination._reverse_ordering(self.ordering)
+            )
+        else:
+            queryset = queryset.order_by(*self.ordering)
+
+        if current_position is not None:
+            order = self.ordering[0]
+            is_reversed = order.startswith("-")
+            order_attr = order.lstrip("-")
+
+            if reverse != is_reversed:
+                kwargs = {order_attr + "__lt": current_position}
+            else:
+                kwargs = {order_attr + "__gt": current_position}
+
+            queryset = queryset.filter(**kwargs)
+
+        sliced = queryset[offset : offset + self.page_size + 1]
+        results = [obj async for obj in sliced]
+        self.page = list(results[: self.page_size])
+
+        if len(results) > len(self.page):
+            has_following_position = True
+            following_position = self._get_position_from_instance(
+                results[-1], self.ordering
+            )
+        else:
+            has_following_position = False
+            following_position = None
+
+        if reverse:
+            self.page = list(reversed(self.page))
+            self.has_next = (current_position is not None) or (offset > 0)
+            self.has_previous = has_following_position
+            if self.has_next:
+                self.next_position = current_position
+            if self.has_previous:
+                self.previous_position = following_position
+        else:
+            self.has_next = has_following_position
+            self.has_previous = (current_position is not None) or (offset > 0)
+            if self.has_next:
+                self.next_position = following_position
+            if self.has_previous:
+                self.previous_position = current_position
+
+        if (self.has_previous or self.has_next) and self.template is not None:
+            self.display_page_controls = True
+
+        return self.page
 
 
 class FastPageNumberPagination(BasePagination):
@@ -141,7 +252,7 @@ class FastPageNumberPagination(BasePagination):
     max_page_size = None
     invalid_page_message = _("Invalid page.")
 
-    def get_page_size(self, request):
+    def get_page_size(self, request: Request) -> int | None:
         """Returns the page size for the current request."""
         if self.page_size_query_param:
             try:
@@ -154,7 +265,7 @@ class FastPageNumberPagination(BasePagination):
                 return size
         return self.page_size
 
-    def get_page_number(self, request):
+    def get_page_number(self, request: Request) -> int:
         """Returns the requested page number from the query string."""
         raw = request.query_params.get(self.page_query_param, 1)
         try:
@@ -165,7 +276,12 @@ class FastPageNumberPagination(BasePagination):
             raise NotFound(self.invalid_page_message)
         return page
 
-    def paginate_queryset(self, queryset, request, view=None):
+    def paginate_queryset(
+        self,
+        queryset: QuerySet[Any],
+        request: Request,
+        view: APIView | None = None,
+    ) -> list[Any] | None:
         """Returns a list of items for the requested page without issuing a COUNT(*)."""
         self.request = request
         page_size = self.get_page_size(request)
@@ -181,7 +297,12 @@ class FastPageNumberPagination(BasePagination):
             raise NotFound(self.invalid_page_message)
         return items
 
-    async def apaginate_queryset(self, queryset, request, view=None):
+    async def apaginate_queryset(
+        self,
+        queryset: QuerySet[Any],
+        request: Request,
+        view: APIView | None = None,
+    ) -> list[Any] | None:
         """Async variant of paginate_queryset using async ORM iteration."""
         self.request = request
         page_size = self.get_page_size(request)
@@ -198,7 +319,7 @@ class FastPageNumberPagination(BasePagination):
             raise NotFound(self.invalid_page_message)
         return items
 
-    def get_paginated_response(self, data):
+    def get_paginated_response(self, data: Any) -> Response:
         """Returns the paginated response with results, next, and previous links."""
         return Response(
             {
@@ -212,7 +333,7 @@ class FastPageNumberPagination(BasePagination):
             }
         )
 
-    def _build_link(self, page_number):
+    def _build_link(self, page_number: int) -> str:
         url = self.request.build_absolute_uri()
         if page_number == 1:
             return remove_query_param(url, self.page_query_param)

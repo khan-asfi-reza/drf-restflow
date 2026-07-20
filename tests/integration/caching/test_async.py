@@ -154,7 +154,7 @@ def test_sync_methods_raise_on_async_wrapped():
 
 
 def test_async_cache_if_predicate_is_awaited():
-    async def only_positive(value):
+    async def only_positive(value, *args, **kwargs):
         return value > 0
 
     @cache_result(
@@ -170,7 +170,7 @@ def test_async_cache_if_predicate_is_awaited():
 
 
 def test_async_cache_unless_predicate_is_awaited():
-    async def is_zero(value):
+    async def is_zero(value, *args, **kwargs):
         return value == 0
 
     @cache_result(
@@ -186,7 +186,7 @@ def test_async_cache_unless_predicate_is_awaited():
 
 
 def test_async_predicate_on_sync_wrapped_raises():
-    async def predicate(_):
+    async def predicate(_, *args, **kwargs):
         return True
 
     @cache_result(

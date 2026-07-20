@@ -1,4 +1,5 @@
 import asyncio
+from unittest.mock import patch
 
 import pytest
 from django.core.cache import cache
@@ -168,7 +169,7 @@ def test_cache_if_skips_when_predicate_false():
     class V(APIView):
         @cache_response(
             ttl=60,
-            cache_if=lambda response: response.status_code < 400,
+            cache_if=lambda response, *a, **k: response.status_code < 400,
         )
         def get(self, request):
             calls.append(1)
@@ -179,6 +180,23 @@ def test_cache_if_skips_when_predicate_false():
     view(_get())
 
     assert len(calls) == 2  # never cached
+
+
+def test_cache_response_ttl_callable_from_response():
+    class V(APIView):
+        @cache_response(
+            ttl=lambda response, *a, **k: (
+                5 if response.status_code >= 400 else 500
+            ),
+        )
+        def get(self, request):
+            return DRFResponse({"ok": True}, status=200)
+
+    view = V.as_view()
+    with patch.object(cache, "set", wraps=cache.set) as spy:
+        view(_get())
+
+    assert spy.call_args.kwargs["timeout"] == 500
 
 
 # ---------- key constructor defaults ----------
@@ -317,7 +335,7 @@ def test_async_cache_if_skips_when_predicate_false():
     class V(AsyncAPIView):
         @cache_response(
             ttl=60,
-            cache_if=lambda response: response.status_code < 400,
+            cache_if=lambda response, *a, **k: response.status_code < 400,
         )
         async def get(self, request):
             calls.append(1)

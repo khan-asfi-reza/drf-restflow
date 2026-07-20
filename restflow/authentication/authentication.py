@@ -1,5 +1,6 @@
 import base64
 import binascii
+from typing import TYPE_CHECKING, Any, cast
 
 from asgiref.sync import sync_to_async
 from django.contrib.auth import aauthenticate as django_aauthenticate
@@ -8,6 +9,11 @@ from django.utils.translation import gettext_lazy as _
 from rest_framework import authentication as drf_auth
 from rest_framework import exceptions
 from rest_framework.authentication import get_authorization_header
+
+if TYPE_CHECKING:
+    from collections.abc import Awaitable
+
+    from django.contrib.auth.models import AbstractUser
 
 
 class BaseAuthentication(drf_auth.BaseAuthentication):
@@ -60,7 +66,7 @@ class BasicAuthentication(BaseAuthentication, drf_auth.BasicAuthentication):
     async def aauthenticate_credentials(self, userid, password, request=None):
         """Authenticates the user.<pk>/<username field> and password using the configured authentication backends."""
         credentials = {
-            get_user_model().USERNAME_FIELD: userid,
+            cast("type[AbstractUser]", get_user_model()).USERNAME_FIELD: userid,
             "password": password,
         }
         user = await django_aauthenticate(request=request, **credentials)
@@ -81,7 +87,7 @@ class SessionAuthentication(BaseAuthentication, drf_auth.SessionAuthentication):
         underlying = getattr(request, "_request", request)
         auser = getattr(underlying, "auser", None)
         if callable(auser):
-            user = await auser()
+            user = await cast("Awaitable[Any]", auser())
         else:
             user = getattr(underlying, "user", None)
         if not user or not user.is_active:
@@ -123,7 +129,10 @@ class TokenAuthentication(BaseAuthentication, drf_auth.TokenAuthentication):
         """Returns a (user, token) tuple for the given token key using async ORM."""
         model = self.get_model()
         try:
-            token = await model.objects.select_related("user").aget(key=key)
+            token = cast(
+                Any,
+                await model.objects.select_related("user").aget(key=key),
+            )
         except model.DoesNotExist as exc:
             raise exceptions.AuthenticationFailed(_("Invalid token.")) from exc
         if not token.user.is_active:

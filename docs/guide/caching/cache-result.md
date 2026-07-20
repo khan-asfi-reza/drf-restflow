@@ -24,10 +24,10 @@ def get_user_payload(user_id: int):
 | Parameter | Type | Default | Effect |
 | --- | --- | --- | --- |
 | `key_constructor` | `KeyConstructor` subclass, instance, or dict of fields | `DefaultKeyConstructor` | How cache keys are built. A dict goes through `InlineKeyConstructor`. |
-| `ttl` | `int \| None` | `3600` | Time-to-live in seconds. `None` means no expiration. |
+| `ttl` | `int \| None \| Callable` | `3600` | Time-to-live in seconds. `None` means no expiration. A callable `ttl(result, *args, **kwargs)` returning `int` or `None` is evaluated on a cache miss to compute the ttl per call, and may be async on an async target. |
 | `invalidates_on` | `list[InvalidationRule]` | `None` | Rules that fire on Django model signals to invalidate the cache. |
-| `cache_if` | `Callable` | `None` | Predicate on the function's result. The result is cached only when this returns truthy. |
-| `cache_unless` | `Callable` | `None` | Predicate on the function's result. The result is skipped (not cached) when this returns truthy. |
+| `cache_if` | `Callable` | `None` | Predicate called as `cache_if(result, *args, **kwargs)`. The result is cached only when this returns truthy. |
+| `cache_unless` | `Callable` | `None` | Predicate called as `cache_unless(result, *args, **kwargs)`. The result is skipped (not cached) when this returns truthy. |
 
 `cache_if` and `cache_unless` are mutually exclusive on a single
 decorator.
@@ -164,10 +164,25 @@ metadata = get_user_payload.get_cached_metadata(42)
 Returns the metadata dict for the cached call, or `None` if there is
 no cache entry yet. Does not run the wrapped function.
 
+## Dynamic ttl
+
+`ttl` accepts a callable that computes the time-to-live per call. It runs
+on a cache miss, just before the write, and receives the result followed
+by the call arguments. Return an `int` number of seconds or `None` to
+cache without expiry. On an async target the callable may be async.
+
+```python
+@cache_result(
+    ttl=lambda result, *args, **kwargs: 60 if not result else 3600,
+)
+def get_report(brand_id: int, month: int):
+    return build_report(brand_id, month)
+```
+
 ## cache_if and cache_unless
 
-Filter what gets stored based on the result. Both predicates receive
-the function's return value.
+Filter what gets stored based on the result and the call arguments. Both
+predicates are called as `predicate(result, *args, **kwargs)`.
 
 ```python
 from restflow.caching import cache_result
@@ -175,7 +190,7 @@ from restflow.caching import cache_result
 
 @cache_result(
     ttl=60,
-    cache_if=lambda result: result is not None,
+    cache_if=lambda result, *args, **kwargs: result is not None,
 )
 def get_user_or_none(user_id: int):
     return User.objects.filter(pk=user_id).first()
@@ -186,11 +201,16 @@ def get_user_or_none(user_id: int):
 ```python
 @cache_result(
     ttl=60,
-    cache_unless=lambda result: result == [],
+    cache_unless=lambda result, *args, **kwargs: result == [],
 )
 def search(query: str):
     return list(Search.run(query))
 ```
+
+!!! warning "Breaking change"
+    `cache_if` and `cache_unless` now receive `(result, *args, **kwargs)`.
+    Predicates written for an earlier release that accept only the result
+    (for example `lambda result: ...`) must add `*args, **kwargs`.
 
 ## Putting it all together
 
@@ -223,7 +243,7 @@ class UserPayloadKey(KeyConstructor):
             rewarm=True,
         ),
     ],
-    cache_if=lambda result: bool(result),
+    cache_if=lambda result, *args, **kwargs: bool(result),
 )
 def get_user_payload(user_id: int):
     return expensive_lookup(user_id)
@@ -290,7 +310,7 @@ async-wrapped function, pointing at the async-prefixed alternative.
 function is async.
 
 ```python
-async def has_payload(result):
+async def has_payload(result, *args, **kwargs):
     return result is not None
 
 

@@ -1,4 +1,5 @@
 import inspect
+from collections.abc import Callable
 from types import UnionType
 from typing import (
     Annotated,
@@ -7,6 +8,7 @@ from typing import (
     NewType,
     NotRequired,
     Union,
+    cast,
     get_args,
     get_origin,
 )
@@ -88,17 +90,18 @@ def resolve_field_from_type(
     type_map: dict[type, type],
     field_name: str | None = None,
     list_field_class: type | None = None,
-    list_field_hook=None,
+    list_field_hook: Callable[..., Any] | None = None,
     choice_field_class: type | None = None,
-    nested_predicate=None,
-    nested_factory=None,
+    nested_predicate: Callable[[Any], bool] | None = None,
+    nested_factory: Callable[[Any, dict[str, Any]], Any] | None = None,
     error_message: str | None = None,
     allow_null_on_optional: bool = False,
     **field_kwargs,
 ):
     """Resolve a Python type annotation to a field instance, dispatching nested, Optional, NotRequired, list, and Literal forms."""
     if nested_predicate and nested_predicate(data_type):
-        return nested_factory(data_type, field_kwargs)
+        factory = cast(Callable[..., Any], nested_factory)
+        return factory(data_type, field_kwargs)
 
     origin = get_origin(data_type)
 
@@ -203,7 +206,8 @@ def resolve_field_from_type(
         args = get_args(data_type)
         inner = args[0] if args else str
         if nested_predicate and nested_predicate(inner):
-            return nested_factory(inner, {**field_kwargs, "many": True})
+            factory = cast(Callable[..., Any], nested_factory)
+            return factory(inner, {**field_kwargs, "many": True})
         child = resolve_field_from_type(
             inner,
             type_map=type_map,

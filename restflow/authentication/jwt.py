@@ -2,6 +2,7 @@ import hashlib
 import secrets
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
+from typing import TYPE_CHECKING, cast
 
 import jwt as pyjwt
 from django.contrib.auth import get_user_model
@@ -14,6 +15,9 @@ from rest_framework.authentication import get_authorization_header
 
 from restflow.authentication.authentication import BaseAuthentication
 from restflow.settings import restflow_settings
+
+if TYPE_CHECKING:
+    from jwt.types import Options
 
 ACCESS_TOKEN_TYPE = "access"
 REFRESH_TOKEN_TYPE = "refresh"
@@ -147,7 +151,7 @@ def decode_token(raw: str) -> dict:
     s = get_jwt_settings()
     validate_algorithm(s.ALGORITHM)
     validate_signing_key_shape(s.ALGORITHM, get_verifying_key())
-    options = {"require": ["exp", "iat"]}
+    options: Options = {"require": ["exp", "iat"]}
     try:
         return pyjwt.decode(
             raw,
@@ -272,11 +276,11 @@ class RefreshToken(_Token):
     @property
     def access_token(self) -> AccessToken:
         """Returns a fresh access token derived from this refresh token's user claim."""
-        return self._mint(ACCESS_TOKEN_TYPE)
+        return cast(AccessToken, self._mint(ACCESS_TOKEN_TYPE))
 
     def rotate(self) -> "RefreshToken":
         """Returns a fresh refresh token derived from this token's user claim."""
-        return self._mint(REFRESH_TOKEN_TYPE)
+        return cast(RefreshToken, self._mint(REFRESH_TOKEN_TYPE))
 
     def _mint(self, token_type: str):
         s = get_jwt_settings()
