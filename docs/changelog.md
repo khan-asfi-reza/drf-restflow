@@ -5,6 +5,61 @@ All notable changes to drf-restflow will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.0] - 2026-07-20
+
+### Changed
+
+- BREAKING: `cache_if` and `cache_unless` now receive `(result, *args, **kwargs)` instead of just the result. The predicates are called with the function's return value followed by the call arguments, matching the new callable `ttl`. A predicate written for an earlier release that accepts only the result must add `*args, **kwargs`. The same applies to `cache_response`, where the first argument is the rendered response.
+
+  ```python
+  # before
+  @cache_result(UserKey, ttl=300, cache_if=lambda result: result is not None)
+  def get_profile(user_id): ...
+
+  # after
+  @cache_result(
+      UserKey, ttl=300,
+      cache_if=lambda result, *args, **kwargs: result is not None,
+  )
+  def get_profile(user_id): ...
+  ```
+
+### Added
+
+- restflow now ships a `py.typed` marker and a fully annotated public API. The package type-checks clean under pyright in standard mode with `django-stubs` and `djangorestframework-stubs`, and a `typecheck` job gates it in CI. Serializers, views, filters, permissions, caching, throttling, pagination, and the test client all carry real types instead of `Any`. Because the package was previously untyped, a project running mypy or pyright in a strict configuration may surface new type errors in its own code where restflow symbols resolved to `Any` before.
+
+- `ttl` on `cache_result` and `cache_response` accepts a callable that computes the time-to-live per call. It runs on a cache miss, right before the write, and receives `(result, *args, **kwargs)`. Return an int number of seconds, or `None` to cache without expiry. On an async target the callable may be `async def`.
+
+  ```python
+  @cache_result(
+      UserKey,
+      ttl=lambda result, *args, **kwargs: 60 if not result else 3600,
+  )
+  def get_report(brand_id, month):
+      return build_report(brand_id, month)
+  ```
+
+- A decorated function exposes `.func`, the undecorated target typed with its original signature. Calling it runs the function directly and skips the cache, so it doubles as an escape hatch and as the function object to pass around or introspect. The stdlib `__wrapped__` attribute that `functools.wraps` already sets is now declared with the same type.
+
+  ```python
+  @cache_result(UserKey, ttl=300)
+  def get_profile(user_id: int) -> Profile: ...
+
+  get_profile.func(1)   # uncached call, typed (user_id: int) -> Profile
+  ```
+
+- `filterset_schema_methods` controls which HTTP methods expose a view's filterset parameters in the OpenAPI schema. `RestflowAutoSchema` injects filter parameters for every method of a view that declares `filterset_class`, including `POST`, `PUT`, and `PATCH`. Set `filterset_schema_methods` on the view to limit them to specific methods (case-insensitive), or set `SCHEMA.FILTER_METHODS` in `RESTFLOW_SETTINGS` for a project-wide default. A per-view attribute overrides the setting, and `None` means every method. The default is unchanged, so existing schemas keep filter parameters on every method.
+
+  ```python
+  class ProductView(AsyncModelViewSet):
+      filterset_class = ProductFilterSet
+      filterset_schema_methods = ["GET"]
+  ```
+
+- Instantiating a `Serializer` or `ModelSerializer` subclass now reports the concrete class to type checkers, and `many=True` reports `ListSerializer`, instead of the `ListSerializer | Any` union inherited from DRF. IDE go-to-definition and autocomplete resolve to the subclass and its fields. Runtime behavior is unchanged, this only sharpens the static types.
+
+- `CursorPagination.apaginate_queryset` now paginates natively on the event loop with async ORM iteration instead of running DRF's sync `paginate_queryset` in a thread via `sync_to_async`. It mirrors DRF's cursor logic and only the row fetch changed, so results are identical. The `PageNumberPagination`, `LimitOffsetPagination`, and `FastPageNumberPagination` async paths were already native. A custom paginator that does not implement `apaginate_queryset` still falls back to `sync_to_async` through `BasePagination`.
+
 ## [1.4.1] - 2026-07-04
 
 ### Added
