@@ -4221,9 +4221,9 @@ query string and URL kwargs return the cached response without running
 </tr>
 <tr>
 <td><code>ttl</code></td>
-<td><code>int \| None</code></td>
+<td><code>int \| None \| Callable</code></td>
 <td><code>3600</code></td>
-<td>Time-to-live in seconds. <code>None</code> means no expiration.</td>
+<td>Time-to-live in seconds. <code>None</code> means no expiration. A callable <code>ttl(response, *args, **kwargs)</code> returning <code>int</code> or <code>None</code> is evaluated on a cache miss to compute the ttl per call, and may be async on an async view.</td>
 </tr>
 <tr>
 <td><code>invalidates_on</code></td>
@@ -4235,13 +4235,13 @@ query string and URL kwargs return the cached response without running
 <td><code>cache_if</code></td>
 <td><code>Callable</code></td>
 <td><code>None</code></td>
-<td>Predicate on the response. The response is cached only when this returns truthy.</td>
+<td>Predicate called as <code>cache_if(response, *args, **kwargs)</code>. The response is cached only when this returns truthy.</td>
 </tr>
 <tr>
 <td><code>cache_unless</code></td>
 <td><code>Callable</code></td>
 <td><code>None</code></td>
-<td>Predicate on the response. The response is skipped (not cached) when this returns truthy.</td>
+<td>Predicate called as <code>cache_unless(response, *args, **kwargs)</code>. The response is skipped (not cached) when this returns truthy.</td>
 </tr>
 <tr>
 <td><code>set_cache_headers</code></td>
@@ -4373,12 +4373,18 @@ Skip caching for errors or empty payloads.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="k">class</span><span class="w"> </span><span class="nc">V</span><span class="p">(</span><span class="n">APIView</span><span class="p">):</span>
 <a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a>    <span class="nd">@cache_response</span><span class="p">(</span>
 <a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a>        <span class="n">ttl</span><span class="o">=</span><span class="mi">60</span><span class="p">,</span>
-<a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a>        <span class="n">cache_if</span><span class="o">=</span><span class="k">lambda</span> <span class="n">response</span><span class="p">:</span> <span class="n">response</span><span class="o">.</span><span class="n">status_code</span> <span class="o">&lt;</span> <span class="mi">400</span><span class="p">,</span>
+<a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a>        <span class="n">cache_if</span><span class="o">=</span><span class="k">lambda</span> <span class="n">response</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">:</span> <span class="n">response</span><span class="o">.</span><span class="n">status_code</span> <span class="o">&lt;</span> <span class="mi">400</span><span class="p">,</span>
 <a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a>    <span class="p">)</span>
 <a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a>    <span class="k">def</span><span class="w"> </span><span class="nf">get</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">request</span><span class="p">):</span>
 <a id="__codelineno-6-7" name="__codelineno-6-7" href="#__codelineno-6-7"></a>        <span class="k">return</span> <span class="n">Response</span><span class="p">({</span><span class="s2">&quot;ok&quot;</span><span class="p">:</span> <span class="kc">True</span><span class="p">})</span>
 </code></pre></div>
 <p>For async views, both predicates may be <code>async def</code>.</p>
+<div class="admonition warning">
+<p class="admonition-title">Breaking change</p>
+<p><code>cache_if</code> and <code>cache_unless</code> now receive <code>(response, *args, **kwargs)</code>.
+Predicates written for an earlier release that accept only the response
+(for example <code>lambda response: ...</code>) must add <code>*args, **kwargs</code>.</p>
+</div>
 <h2 id="surfacing-cache-status-to-the-client">Surfacing cache status to the client<a class="headerlink" href="#surfacing-cache-status-to-the-client" title="Permanent link">&para;</a></h2>
 <p>Pass <code>set_cache_headers=True</code> to attach the cache metadata as response
 headers on every call. Clients and monitoring can then tell hits from
