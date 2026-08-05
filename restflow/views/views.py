@@ -17,6 +17,7 @@ from restflow.throttling import throttler_allow_request
 
 if TYPE_CHECKING:
     from rest_framework.authentication import BaseAuthentication
+    from rest_framework.metadata import BaseMetadata
     from rest_framework.request import ForcedAuthentication
 
     _HelpersBase = DRFAPIView
@@ -53,6 +54,26 @@ async def aperform_post_fetches(
         else:
             await sync_to_async(fetcher.fetch, thread_sensitive=True)(target)
     return target if many else target[0]
+
+
+async def aserializer_data(serializer: BaseSerializer[Any]) -> Any:
+    """Resolve serializer.data in a thread so it can reach the database.
+
+    Building a representation walks lazy querysets and follows relations,
+    both of which open a cursor. Async handlers cannot do that on the event
+    loop, so the whole render step runs through sync_to_async.
+    """
+    return await sync_to_async(_read_serializer_data, thread_sensitive=True)(
+        serializer
+    )
+
+
+def _read_serializer_data(serializer: BaseSerializer[Any]) -> Any:
+    return serializer.data
+
+
+def _no_actions(_request: Any, _view: Any) -> dict[str, Any]:
+    return {}
 
 
 class APIViewHelpersMixin(_HelpersBase):
@@ -139,6 +160,23 @@ class APIViewHelpersMixin(_HelpersBase):
         ser.is_valid(raise_exception=True)
         return ser
 
+    def build_options_metadata(self, request: Request) -> Any:
+        """
+        Returns the OPTIONS metadata for the view.
+
+        Every restflow view exposes get_serializer, so DRF's metadata class
+        reaches it even on views that never declare a serializer_class. Those
+        views still have to answer OPTIONS, so the serializer-derived actions
+        are dropped instead of failing the request.
+        """
+        metadata_class = cast("type[BaseMetadata]", self.metadata_class)
+        metadata = metadata_class()
+        try:
+            return metadata.determine_metadata(request, self)
+        except ImproperlyConfigured:
+            metadata.determine_actions = _no_actions  # pyright: ignore[reportAttributeAccessIssue]
+            return metadata.determine_metadata(request, self)
+
     def serialized_response(
         self,
         instance: Any,
@@ -208,7 +246,19 @@ class APIViewHelpersMixin(_HelpersBase):
 
 
 class APIView(APIViewHelpersMixin, DRFAPIView):
-    pass
+
+    def options(
+        self, request: Request, *args: Any, **kwargs: Any
+    ) -> Response:
+        """
+        Handles the OPTIONS request, tolerating views without a
+        serializer_class.
+        """
+        if self.metadata_class is None:
+            return self.http_method_not_allowed(request, *args, **kwargs)
+        return Response(
+            self.build_options_metadata(request), status=status.HTTP_200_OK
+        )
 
 class AsyncAPIView(APIViewHelpersMixin, DRFAPIView):
 
@@ -246,6 +296,23 @@ class AsyncAPIView(APIViewHelpersMixin, DRFAPIView):
             request, response, *args, **kwargs
         )
         return self.response
+
+    async def options(  # pyright: ignore[reportIncompatibleMethodOverride]
+        self, request: Request, *args: Any, **kwargs: Any
+    ) -> Response:
+        """
+        Async equivalent of APIView.options. Metadata generation inspects the
+        serializer and can reach the database, so it runs in a thread instead
+        of on the event loop.
+        """
+        if self.metadata_class is None:
+            return await maybe_await(
+                self.http_method_not_allowed(request, *args, **kwargs)
+            )
+        data = await sync_to_async(
+            self.build_options_metadata, thread_sensitive=True
+        )(request)
+        return Response(data, status=status.HTTP_200_OK)
 
     async def ainitial(
         self, request: Request, *args: Any, **kwargs: Any
@@ -417,7 +484,8 @@ class AsyncAPIView(APIViewHelpersMixin, DRFAPIView):
             serializer_class=serializer_class,
             direction="response",
         )
-        return Response(ser.data, status=status, headers=headers)
+        data = await aserializer_data(ser)
+        return Response(data, status=status, headers=headers)
 
     async def apaginated_response(
         self,
@@ -440,7 +508,8 @@ class AsyncAPIView(APIViewHelpersMixin, DRFAPIView):
                 serializer_class=serializer_class,
                 direction="response",
             )
-            return Response(ser.data, headers=headers)
+            data = await aserializer_data(ser)
+            return Response(data, headers=headers)
         paginator = paginator_cls()
         apaginate = getattr(paginator, "apaginate_queryset", None)
         if apaginate is not None:
@@ -456,7 +525,8 @@ class AsyncAPIView(APIViewHelpersMixin, DRFAPIView):
                 serializer_class=serializer_class,
                 direction="response",
             )
-            return Response(ser.data, headers=headers)
+            data = await aserializer_data(ser)
+            return Response(data, headers=headers)
         page = await aperform_post_fetches(page, post_fetches, many=True)
         ser = self.get_serializer(
             page,
@@ -464,7 +534,8 @@ class AsyncAPIView(APIViewHelpersMixin, DRFAPIView):
             serializer_class=serializer_class,
             direction="response",
         )
-        response = paginator.get_paginated_response(ser.data)
+        data = await aserializer_data(ser)
+        response = paginator.get_paginated_response(data)
         if headers:
             for key, value in headers.items():
                 response[key] = value

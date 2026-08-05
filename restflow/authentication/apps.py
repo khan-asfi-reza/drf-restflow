@@ -10,3 +10,4 @@ class AuthenticationConfig(AppConfig):
     name = "restflow.authentication"
     label = "restflow_authentication"
     verbose_name = "Restflow Authentication"
+    default_auto_field = "django.db.models.AutoField"

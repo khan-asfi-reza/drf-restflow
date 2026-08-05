@@ -1,9 +1,11 @@
 from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any, Union, cast
 
+from asgiref.sync import sync_to_async
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db.models import Model
 from rest_framework import fields as drf_fields
+from rest_framework import relations as drf_relations
 from rest_framework import serializers as drf_serializers
 from rest_framework.exceptions import ValidationError
 from rest_framework.fields import SkipField, empty, get_error_detail
@@ -32,6 +34,42 @@ if TYPE_CHECKING:
 else:
     _AsyncMixinBase = object
     _AsyncModelMixinBase = object
+
+
+def validator_hits_database(validator: Any) -> bool:
+    """Returns True when a validator resolves against a queryset, like DRF's unique validators."""
+    return getattr(validator, "queryset", None) is not None
+
+
+def field_hits_database(field: Any, _seen: set[int] | None = None) -> bool:
+    """Returns True when running a field's validation would touch the database.
+
+    Related fields resolve primary keys through a queryset and unique
+    validators run an exists query, so their validation has to move off the
+    event loop. Nested serializers are inspected recursively.
+    """
+    seen = _seen if _seen is not None else set()
+    if id(field) in seen:
+        return False
+    seen.add(id(field))
+
+    if isinstance(
+        field, drf_relations.RelatedField | drf_relations.ManyRelatedField
+    ):
+        return True
+    if any(
+        validator_hits_database(validator)
+        for validator in getattr(field, "validators", ())
+    ):
+        return True
+    if isinstance(field, drf_serializers.BaseSerializer):
+        child = getattr(field, "child", None)
+        nested = child if child is not None else field
+        return any(
+            field_hits_database(nested_field, seen)
+            for nested_field in getattr(nested, "fields", {}).values()
+        )
+    return False
 
 
 def build_explicit_fields(attrs: dict) -> list[tuple[str, drf_fields.Field]]:
@@ -210,7 +248,12 @@ class AsyncSerializerMixin(_AsyncMixinBase):
             validate_method = getattr(self, f"validate_{field.field_name}", None)
             primitive_value = field.get_value(data)
             try:
-                validated_value = field.run_validation(primitive_value)
+                if field_hits_database(field):
+                    validated_value = await sync_to_async(
+                        field.run_validation, thread_sensitive=True
+                    )(primitive_value)
+                else:
+                    validated_value = field.run_validation(primitive_value)
                 if validate_method is not None:
                     validated_value = await maybe_await(
                         validate_method(validated_value)
@@ -241,7 +284,15 @@ class AsyncSerializerMixin(_AsyncMixinBase):
 
         value = await self.ato_internal_value(data)
         try:
-            self.run_validators(value)
+            if any(
+                validator_hits_database(validator)
+                for validator in self.validators
+            ):
+                await sync_to_async(self.run_validators, thread_sensitive=True)(
+                    value
+                )
+            else:
+                self.run_validators(value)
             value = await maybe_await(self.validate(value))
             assert value is not None, ".validate() should return the validated data"
         except (ValidationError, DjangoValidationError) as exc:

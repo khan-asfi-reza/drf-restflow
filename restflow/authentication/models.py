@@ -16,7 +16,7 @@ class BlacklistedToken(models.Model):
     class Meta:
         app_label = "restflow_authentication"
         indexes = [
-            models.Index(fields=["expires_at"]),
+            models.Index(fields=["expires_at"], name="restflow_au_expires_idx"),
         ]
 
     def __str__(self) -> str:

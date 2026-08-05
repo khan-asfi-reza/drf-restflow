@@ -28,6 +28,9 @@ class PostgresModel(models.Model):
 
     class Meta:
         app_label = "tests"
+        # Without this, run_syncdb tries to create the array columns on
+        # sqlite and every transaction=True test fails during DB setup.
+        required_db_vendor = "postgresql"
 
 
 @pytest.mark.postgres

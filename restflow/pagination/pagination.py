@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import math
 from typing import TYPE_CHECKING, Any, cast
 
@@ -10,12 +12,13 @@ from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.settings import api_settings
 from rest_framework.utils.urls import remove_query_param, replace_query_param
-from rest_framework.views import APIView
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator
+    from collections.abc import Iterator, Sequence
 
     from django.core.paginator import Page, Paginator
+    from rest_framework.views import APIView
+
 
 
 class BasePagination(drf_pagination.BasePagination):
@@ -26,7 +29,7 @@ class BasePagination(drf_pagination.BasePagination):
 
     async def apaginate_queryset(
         self,
-        queryset: QuerySet[Any],
+        queryset: QuerySet[Any, Any],
         request: Request,
         view: APIView | None = None,
     ) -> list[Any] | None:
@@ -41,7 +44,7 @@ class AsyncPage:
         self,
         object_list: list[Any],
         number: int,
-        paginator: "AsyncPaginator",
+        paginator: AsyncPaginator,
     ) -> None:
         self.object_list = object_list
         self.number = number
@@ -59,7 +62,7 @@ class AsyncPage:
     def previous_page_number(self) -> int:
         return self.number - 1
 
-    def __iter__(self) -> "Iterator[Any]":
+    def __iter__(self) -> Iterator[Any]:
         return iter(self.object_list)
 
     def __len__(self) -> int:
@@ -80,7 +83,7 @@ class PageNumberPagination(BasePagination, drf_pagination.PageNumberPagination):
     """
     async def apaginate_queryset(
         self,
-        queryset: QuerySet[Any],
+        queryset: QuerySet[Any, Any],
         request: Request,
         view: APIView | None = None,
     ) -> list[Any] | None:
@@ -135,7 +138,7 @@ class LimitOffsetPagination(BasePagination, drf_pagination.LimitOffsetPagination
     """
     async def apaginate_queryset(
         self,
-        queryset: QuerySet[Any],
+        queryset: QuerySet[Any, Any],
         request: Request,
         view: APIView | None = None,
     ) -> list[Any] | None:
@@ -164,7 +167,7 @@ class CursorPagination(BasePagination, drf_pagination.CursorPagination):
 
     async def apaginate_queryset(  # noqa: PLR0912, PLR0915
         self,
-        queryset: QuerySet[Any],
+        queryset: QuerySet[Any, Any],
         request: Request,
         view: APIView | None = None,
     ) -> list[Any] | None:
@@ -278,7 +281,7 @@ class FastPageNumberPagination(BasePagination):
 
     def paginate_queryset(
         self,
-        queryset: QuerySet[Any],
+        queryset: QuerySet[Any, Any] | Sequence[Any],
         request: Request,
         view: APIView | None = None,
     ) -> list[Any] | None:
@@ -299,7 +302,7 @@ class FastPageNumberPagination(BasePagination):
 
     async def apaginate_queryset(
         self,
-        queryset: QuerySet[Any],
+        queryset: QuerySet[Any, Any],
         request: Request,
         view: APIView | None = None,
     ) -> list[Any] | None:

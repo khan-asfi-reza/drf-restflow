@@ -7,6 +7,8 @@ from rest_framework.response import Response
 from rest_framework.serializers import BaseSerializer
 from rest_framework.settings import api_settings
 
+from restflow.views.views import aserializer_data
+
 if TYPE_CHECKING:
     from restflow.views.generics import AsyncGenericAPIView
     from restflow.views.viewsets import GenericViewSet
@@ -146,10 +148,11 @@ class AsyncCreateModelMixin(_AsyncCRUDMixinBase):
         """
         serializer = await self.avalidated_serializer()
         await self.aperform_create(serializer)
+        data = await aserializer_data(serializer)
         return await self.aserialized_response(
             serializer.instance,
             status=status.HTTP_201_CREATED,
-            headers=self.get_success_headers(serializer.data),
+            headers=self.get_success_headers(data),
         )
 
     async def aperform_create(
