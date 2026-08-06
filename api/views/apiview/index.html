@@ -3347,6 +3347,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="APIView">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#restflow.views.APIView.options" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        options
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -3366,6 +3383,17 @@
     <span class="md-ellipsis">
       
         dispatch
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#restflow.views.AsyncAPIView.options" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        options
       
     </span>
   </a>
@@ -4120,6 +4148,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="APIView">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#restflow.views.APIView.options" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        options
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -4139,6 +4184,17 @@
     <span class="md-ellipsis">
       
         dispatch
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#restflow.views.AsyncAPIView.options" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        options
       
     </span>
   </a>
@@ -4324,6 +4380,29 @@ helper method surface.</p>
 
 
 
+<div class="doc doc-object doc-function">
+
+
+<h3 id="restflow.views.APIView.options" class="doc doc-heading">
+            <span class="doc doc-object-name doc-function-name">options</span>
+
+
+<a href="#restflow.views.APIView.options" class="headerlink" title="Permanent link">&para;</a></h3>
+<div class="doc-signature highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nf">options</span><span class="p">(</span>
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>    <span class="n">request</span><span class="p">:</span> <span class="n">Request</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">:</span> <span class="n">Any</span>
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Response</span>
+</code></pre></div>
+
+    <div class="doc doc-contents ">
+
+        <p>Handles the OPTIONS request, tolerating views without a
+serializer_class.</p>
+
+
+    </div>
+
+</div>
+
 
 
   </div>
@@ -4390,6 +4469,34 @@ helper method surface.</p>
     <div class="doc doc-contents ">
 
         <p>Async equivalent of APIView.dispatch.</p>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h3 id="restflow.views.AsyncAPIView.options" class="doc doc-heading">
+            <span class="doc doc-object-name doc-function-name">options</span>
+
+
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-async"><code>async</code></small>
+  </span>
+
+<a href="#restflow.views.AsyncAPIView.options" class="headerlink" title="Permanent link">&para;</a></h3>
+<div class="doc-signature highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nf">options</span><span class="p">(</span>
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>    <span class="n">request</span><span class="p">:</span> <span class="n">Request</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">:</span> <span class="n">Any</span>
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Response</span>
+</code></pre></div>
+
+    <div class="doc doc-contents ">
+
+        <p>Async equivalent of APIView.options. Metadata generation inspects the
+serializer and can reach the database, so it runs in a thread instead
+of on the event loop.</p>
 
 
     </div>
