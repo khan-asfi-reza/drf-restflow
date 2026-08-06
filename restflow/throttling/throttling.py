@@ -1,9 +1,13 @@
-from typing import Any
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Any
 
 from asgiref.sync import sync_to_async
 from rest_framework import throttling as drf_throttle
 from rest_framework.request import Request
-from rest_framework.views import APIView
+
+if TYPE_CHECKING:
+    from rest_framework.views import APIView
 
 
 def throttler_allow_request(

@@ -42,7 +42,7 @@ def _encode_data(
     content_type: str | None = None,
 ) -> "tuple[bytes, str | None]":
     if data is None:
-        return (b"", content_type)
+        return (b"", content_type or "application/octet-stream")
 
     assert format is None or content_type is None, (
         "May not set both `format` and `content_type`."

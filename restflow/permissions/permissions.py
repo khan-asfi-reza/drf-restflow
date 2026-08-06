@@ -1,13 +1,15 @@
+from __future__ import annotations
+
 from typing import TYPE_CHECKING, Any, cast
 
 from asgiref.sync import sync_to_async
 from rest_framework import permissions as drf_perms
 from rest_framework.permissions import SAFE_METHODS
 from rest_framework.request import Request
-from rest_framework.views import APIView
 
 if TYPE_CHECKING:
     from django.contrib.auth.models import AbstractUser
+    from rest_framework.views import APIView
 
 from restflow.helpers import maybe_await
 

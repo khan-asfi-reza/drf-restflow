@@ -698,8 +698,18 @@ class OrderField(MultipleChoiceField):
         self.fields = self.process_fields(fields)
         self.labels = self.process_labels(labels or fields)
         self.override_order_direction = override_order_direction
-        self.choices = self.process_choices(self.labels)
-        kwargs["choices"] = self.choices
+        # Labels are display text, so a partial list must not shrink the set
+        # of accepted ordering values. Unlabelled options fall back to the
+        # option key.
+        label_map = dict(self.labels)
+        # DRF reads a dict of choices as a flat list of values, so the pairs
+        # are handed to it as a list to keep the display labels.
+        kwargs["choices"] = self.process_choices(
+            [
+                (key, label_map.get(key, key.removeprefix("-")))
+                for key, _ in self.fields
+            ]
+        )
         super().__init__(**kwargs)
 
     @staticmethod
@@ -738,6 +748,36 @@ class OrderField(MultipleChoiceField):
             suffix = " (Ascending)" if ascending else " (Descending)"
             ret.append((key, f"{val}{suffix}"))
         return ret
+
+    @staticmethod
+    def split_raw_values(data):
+        """Return the requested values in the order they were sent."""
+        if isinstance(data, str):
+            items = data.split(",")
+        elif isinstance(data, (list, tuple, set)):
+            items = []
+            for entry in data:
+                if isinstance(entry, str):
+                    items.extend(entry.split(","))
+                else:
+                    items.append(entry)
+        else:
+            items = [data]
+        return [
+            item.strip() if isinstance(item, str) else item for item in items
+        ]
+
+    def to_internal_value(self, data):
+        """Keep the requested ordering precedence, which the set returned by MultipleChoiceField would drop."""
+        validated = super().to_internal_value(data)
+        ordered = []
+        for item in self.split_raw_values(data):
+            if item in validated and item not in ordered:
+                ordered.append(item)
+        for item in validated:
+            if item not in ordered:
+                ordered.append(item)
+        return ordered
 
     def apply_filter(
             self, filterset, queryset: QuerySet, value: list[str]
@@ -947,4 +987,33 @@ LOOKUP_DEFAULT_FIELD = {
     "in": ListField,
     "isnull": BooleanField,
     "range": ListField,
+    # Component lookups compare against a part of the value, so the variant
+    # takes an integer (or a plain date or time) rather than the parent
+    # field's full format.
+    "year": IntegerField,
+    "iso_year": IntegerField,
+    "month": IntegerField,
+    "day": IntegerField,
+    "week": IntegerField,
+    "week_day": IntegerField,
+    "iso_week_day": IntegerField,
+    "quarter": IntegerField,
+    "hour": IntegerField,
+    "minute": IntegerField,
+    "second": IntegerField,
+    "date": DateField,
+    "time": TimeField,
+    # Substring and pattern lookups take a fragment of the value, so they must
+    # not inherit a parent format validator such as EmailField's.
+    "contains": StringField,
+    "icontains": StringField,
+    "startswith": StringField,
+    "istartswith": StringField,
+    "endswith": StringField,
+    "iendswith": StringField,
+    "regex": StringField,
+    "iregex": StringField,
+    "search": StringField,
+    "trigram_similar": StringField,
+    "unaccent": StringField,
 }

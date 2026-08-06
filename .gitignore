@@ -25,3 +25,6 @@ coverage.xml
 site/
 .ruff_cache/
 .pytest_cache/
+
+# Agent-only full-project verification sandbox
+bin/test/

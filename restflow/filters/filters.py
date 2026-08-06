@@ -1,6 +1,6 @@
 import inspect
-from collections.abc import Callable
-from typing import Any, Literal, Union, cast
+from collections.abc import Callable, Mapping
+from typing import TYPE_CHECKING, Any, Literal, TypeVar, Union, cast
 
 from django.core.exceptions import ImproperlyConfigured
 from django.core.handlers.wsgi import WSGIRequest
@@ -39,6 +39,13 @@ from restflow.helpers import (
     maybe_await,
     require_sync,
 )
+
+if TYPE_CHECKING:
+    from typing import Self
+
+#: Bound to the queryset handed in so filtering keeps the caller's model type
+#: instead of widening to a bare QuerySet.
+QuerySetT = TypeVar("QuerySetT", bound=QuerySet[Any, Any])
 
 DJANGO_FIELD_MAP = {
     "CharField": StringField,
@@ -399,19 +406,27 @@ class FilterMetaClass(SerializerMetaclass):
             field_class = DJANGO_FIELD_MAP.get(field_type, StringField)
             field_kwargs = extra_kwargs.get(field_name, {})
 
+            # Expanded relations keep the traversal in the ORM path, so a
+            # prefixed field filters category__slug rather than slug on the
+            # base model.
+            if field_name_prefix:
+                orm_path = f"{field_name_prefix}__{django_field.name}"
+            else:
+                orm_path = django_field.name
+
             kwargs = {}
-            kwargs.setdefault("db_field", f"{django_field.name}")
+            kwargs.setdefault("db_field", orm_path)
             kwargs.setdefault("lookups", [])
 
             if isinstance(django_field, (ForeignKey, OneToOneField)):
                 # For relations, route through the related PK explicitly.
-                kwargs["filter_by"] = f"{django_field.name}__pk"
+                kwargs["filter_by"] = f"{orm_path}__pk"
                 if field_name in options.related_fields:
                     related_fields = cls._extract_django_model_fields(
                         model_fields=django_field.related_model._meta.get_fields(),
                         options=options,
                         extra_kwargs=extra_kwargs,
-                        field_name_prefix=field_name,
+                        field_name_prefix=orm_path,
                         exclude_fields=field_kwargs.get("exclude") or set(),
                     )
                     fields.extend(related_fields)
@@ -710,9 +725,13 @@ class FilterSet(Serializer, metaclass=FilterMetaClass):
 
     """
 
+    if TYPE_CHECKING:
+
+        def __new__(cls, *args: Any, **kwargs: Any) -> "Self": ...
+
     def __init__(
         self,
-        data=None,
+        data: Mapping[str, Any] | None = None,
         request: Request | WSGIRequest | HttpRequest | None = None,
     ):
         self.request = request
@@ -790,9 +809,9 @@ class FilterSet(Serializer, metaclass=FilterMetaClass):
 
     def filter_queryset(
         self,
-        queryset: QuerySet,
-        ignore=None,
-    ):
+        queryset: QuerySetT,
+        ignore: list[str] | None = None,
+    ) -> QuerySetT:
         """
         Apply validated filters to a queryset and return the filtered result.
 
@@ -813,7 +832,7 @@ class FilterSet(Serializer, metaclass=FilterMetaClass):
         """
         options = self.get_options()
         validated_data = self.model_dump()
-        queryset = require_sync(
+        working: QuerySet[Any, Any] = require_sync(
             self._apply_processors(queryset, "pre"), "afilter_queryset"
         )
         ignore = ignore or []
@@ -824,21 +843,24 @@ class FilterSet(Serializer, metaclass=FilterMetaClass):
             if field is None or field_name in ignore:
                 continue  # pragma: no cover
             result = require_sync(
-                field.apply_filter(filterset=self, queryset=queryset, value=value),
+                field.apply_filter(filterset=self, queryset=working, value=value),
                 "afilter_queryset",
             )
-            queryset = self._absorb_field_result(result, queryset, q_objects)
+            working = self._absorb_field_result(result, working, q_objects)
 
-        queryset = self._combine_q_objects(queryset, q_objects, options.operator)
-        return require_sync(
-            self._apply_processors(queryset, "post"), "afilter_queryset"
+        working = self._combine_q_objects(working, q_objects, options.operator)
+        return cast(
+            "QuerySetT",
+            require_sync(
+                self._apply_processors(working, "post"), "afilter_queryset"
+            ),
         )
 
     async def afilter_queryset(
         self,
-        queryset: QuerySet,
-        ignore=None,
-    ):
+        queryset: QuerySetT,
+        ignore: list[str] | None = None,
+    ) -> QuerySetT:
         """
         Async `filter_queryset`. Callables (`method=`,
         preprocessors, postprocessors) may be `async def`, sync ones still
@@ -854,7 +876,9 @@ class FilterSet(Serializer, metaclass=FilterMetaClass):
         """
         options = self.get_options()
         validated_data = self.model_dump()
-        queryset = await maybe_await(self._apply_processors(queryset, "pre"))
+        working: QuerySet[Any, Any] = await maybe_await(
+            self._apply_processors(queryset, "pre")
+        )
         ignore = ignore or []
 
         q_objects = []
@@ -863,12 +887,15 @@ class FilterSet(Serializer, metaclass=FilterMetaClass):
             if field is None or field_name in ignore:
                 continue  # pragma: no cover
             result = await maybe_await(
-                field.apply_filter(filterset=self, queryset=queryset, value=value)
+                field.apply_filter(filterset=self, queryset=working, value=value)
             )
-            queryset = self._absorb_field_result(result, queryset, q_objects)
+            working = self._absorb_field_result(result, working, q_objects)
 
-        queryset = self._combine_q_objects(queryset, q_objects, options.operator)
-        return await maybe_await(self._apply_processors(queryset, "post"))
+        working = self._combine_q_objects(working, q_objects, options.operator)
+        return cast(
+            "QuerySetT",
+            await maybe_await(self._apply_processors(working, "post")),
+        )
 
 
 class InlineFilterSet:

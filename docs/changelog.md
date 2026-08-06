@@ -5,6 +5,52 @@ All notable changes to drf-restflow will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.1] - 2026-08-05
+
+### Fixed
+
+- Naming a restflow subclass in a DRF setting no longer breaks Django startup. `restflow.permissions`, `restflow.throttling`, `restflow.pagination`, and `restflow.exceptions` imported `rest_framework.views` at module scope. DRF evaluates `DEFAULT_AUTHENTICATION_CLASSES`, `DEFAULT_PERMISSION_CLASSES`, and `DEFAULT_THROTTLE_CLASSES` while `rest_framework.views` is still initialising, so importing a module that reached back into it raised `ImportError: cannot import name 'APIView' from partially initialized module`. No import ordering in the project could avoid it. The annotation-only imports now live behind `TYPE_CHECKING` and the exception handler resolves DRF's handler at call time.
+
+  ```python
+  # settings.py, previously unusable on 2.0.0
+  REST_FRAMEWORK = {
+      "DEFAULT_PERMISSION_CLASSES": ["myapp.permissions.IsApiKeyAuthenticated"],
+  }
+  ```
+
+- `ais_valid()` no longer raises `SynchronousOnlyOperation` on a serializer with a related field or a unique validator. Resolving a primary key and running a uniqueness check both query the database, so those field validations now run in a thread. Async `ModelSerializer` validation works for models with foreign keys and unique columns.
+
+- Async views no longer return 500 when a response renders a lazy queryset or follows a relation. `aserialized_response()`, `apaginated_response()`, and the async create mixin built `serializer.data` on the event loop, which opened a cursor while iterating the queryset or resolving a nested serializer. The render step now runs off the loop.
+
+- `OPTIONS` works on async views and on views without a `serializer_class`. DRF's metadata class inspects the serializer and calls `get_object()` synchronously, which failed inside async dispatch, and because every restflow view exposes `get_serializer()`, DRF also reached it on views that never declare one. `AsyncAPIView` now answers `OPTIONS` off the event loop, and both view classes fall back to metadata without the serializer-derived actions.
+
+- `RelatedField` expansion now filters through the relation. `RelatedField(model=Category, fields=["slug"])` exposed `category__slug` but filtered the base model's own `slug` column, returning wrong rows with no error when the base model happened to have a column of the same name.
+
+- Component lookups accept a component value. `DateField(lookups=["year"])` and the `date`, `time`, `hour`, `minute`, `second`, `month`, `day`, `week`, `week_day`, and `quarter` variants generated a field typed like the parent, so `?published_at__year=2026` failed validation with "Date has wrong format". Component variants are integer fields now, and `date` and `time` variants take a date and a time.
+
+- Substring lookups no longer inherit the parent field's format validator. `EmailField(lookups=["icontains"])` rejected `?email__icontains=alice` with "Enter a valid email address". The `contains`, `startswith`, `endswith`, `regex`, `search`, `trigram_similar`, and `unaccent` families resolve to a plain string field, while `exact` and `iexact` still validate the full format.
+
+- `OrderField` keeps the requested ordering precedence. The value arrived as a set, so `?order_by=name,-price` applied the two keys in an arbitrary order.
+
+- A partial `labels` list on `OrderField` no longer drops the unlabelled ordering options, and display labels reach the field instead of being lost on the way to DRF.
+
+- `AsyncAPIClient.delete()`, `.post()`, and `.options()` work without a body. They passed `content_type=None` to Django's async client, which raised `TypeError` before the request was made.
+
+- `restflow.authentication` pins `default_auto_field`, and `BlacklistedToken` declares its index name explicitly. A project using Django's default `BigAutoField` no longer gets a spurious migration generated inside site-packages on every `makemigrations`.
+
+- `FastPageNumberPagination.paginate_queryset` accepts a sequence as well as a queryset, matching the base signature that `djangorestframework-stubs` 3.17.1 made generic. The override no longer reports `reportIncompatibleMethodOverride` under pyright.
+
+### Changed
+
+- `FilterSet.filter_queryset` and `afilter_queryset` are typed with a type variable bound to the queryset, so the return value keeps the caller's model instead of widening to a bare `QuerySet`. `ignore` is annotated as an optional list of field names and `data` as an optional mapping.
+
+  ```python
+  qs = ProductFilterSet(request=request).filter_queryset(Product.objects.all())
+  # QuerySet[Product] instead of QuerySet[Unknown]
+  ```
+
+- Instantiating a `FilterSet` subclass reports the subclass to type checkers, and editor go-to-definition on the call lands on `FilterSet` rather than the metaclass.
+
 ## [2.0.0] - 2026-07-20
 
 ### Changed

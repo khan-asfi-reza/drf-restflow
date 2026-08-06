@@ -11,7 +11,6 @@ from rest_framework import exceptions as drf_exceptions
 from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.serializers import as_serializer_error
-from rest_framework.views import exception_handler as drf_exception_handler
 
 
 class ErrorCode(StrEnum):
@@ -214,7 +213,9 @@ def exception_handler(exc: Exception, context: dict[str, Any]) -> Response | Non
             status=wrapped.status_code,
         )
 
-    drf_response = drf_exception_handler(exc, context)
+    from rest_framework import views as drf_views
+
+    drf_response = drf_views.exception_handler(exc, context)
     if drf_response is not None:
         return Response(
             format_error(
