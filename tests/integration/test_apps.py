@@ -66,3 +66,76 @@ def test_caching_config_ready_processes_pending_rules_without_top_level_app():
         assert User in CacheRegister._connected_models
     finally:
         CacheRegister.clear()
+
+
+def test_auto_discover_registers_each_rule_once():
+    from django.contrib.auth import get_user_model
+
+    from restflow.caching import (
+        ArgsKeyField,
+        CacheRegister,
+        InvalidationRule,
+        cache_result,
+    )
+
+    CacheRegister.clear()
+    User = get_user_model()
+
+    def declare_during_import():
+        @cache_result(
+            {"fields": {"user": ArgsKeyField("user_id", partition=True)}},
+            ttl=60,
+            invalidates_on=[
+                InvalidationRule(model=User, field_mapping={"user_id": "id"})
+            ],
+        )
+        def fn(user_id: int):  # pragma: no cover - registration-only test
+            return user_id
+
+    try:
+        with patch.object(
+            CacheRegister, "_import_cache_modules", side_effect=declare_during_import
+        ):
+            CacheRegister.auto_discover()
+
+        assert len(CacheRegister._model_rule_ids[User]) == 1
+        signatures = [
+            (id(rule["func"]), id(rule["invalidation_rule"]))
+            for rule in CacheRegister._rules.values()
+        ]
+        assert len(signatures) == len(set(signatures))
+    finally:
+        CacheRegister.clear()
+
+
+def test_rules_added_after_discovery_are_not_queued_again():
+    from django.contrib.auth import get_user_model
+
+    from restflow.caching import (
+        ArgsKeyField,
+        CacheRegister,
+        InvalidationRule,
+        cache_result,
+    )
+
+    CacheRegister.clear()
+    User = get_user_model()
+
+    try:
+        with patch.object(CacheRegister, "_import_cache_modules"):
+            CacheRegister.auto_discover()
+
+        @cache_result(
+            {"fields": {"user": ArgsKeyField("user_id", partition=True)}},
+            ttl=60,
+            invalidates_on=[
+                InvalidationRule(model=User, field_mapping={"user_id": "id"})
+            ],
+        )
+        def fn(user_id: int):  # pragma: no cover - registration-only test
+            return user_id
+
+        assert CacheRegister.pending_count == 0
+        assert len(CacheRegister._model_rule_ids[User]) == 1
+    finally:
+        CacheRegister.clear()

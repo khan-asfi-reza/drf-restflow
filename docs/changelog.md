@@ -5,6 +5,18 @@ All notable changes to drf-restflow will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.2] - 2026-10-31
+
+### Fixed
+
+- Cache invalidation rules register once instead of twice. `auto_discover()` marked discovery finished before importing the cache modules, so every `@cache_result` rule was registered by its decorator on import and then again from the pending list. Each save on a watched model ran its invalidation set twice, and a rule declared with `rewarm=True` recomputed and reserialized its cached value twice per write.
+
+  ```python
+  # one @cache_result rule, two registrations before this release
+  CacheRegister.auto_discover()
+  len(CacheRegister._rules)  # 2
+  ```
+
 ## [2.0.1] - 2026-08-05
 
 ### Fixed
