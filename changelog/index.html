@@ -3918,6 +3918,34 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#202-2026-10-31" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        [2.0.2] - 2026-10-31
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="[2.0.2] - 2026-10-31">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#fixed" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fixed
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#201-2026-08-05" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3930,7 +3958,7 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#fixed" class="md-nav__link">
+  <a href="#fixed_1" class="md-nav__link">
     <span class="md-ellipsis">
       
         Fixed
@@ -4757,6 +4785,34 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#202-2026-10-31" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        [2.0.2] - 2026-10-31
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="[2.0.2] - 2026-10-31">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#fixed" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fixed
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#201-2026-08-05" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -4769,7 +4825,7 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#fixed" class="md-nav__link">
+  <a href="#fixed_1" class="md-nav__link">
     <span class="md-ellipsis">
       
         Fixed
@@ -5585,15 +5641,32 @@
 <p>All notable changes to drf-restflow will be documented in this file.</p>
 <p>The format is based on <a href="https://keepachangelog.com/en/1.0.0/">Keep a Changelog</a>,
 and this project adheres to <a href="https://semver.org/spec/v2.0.0.html">Semantic Versioning</a>.</p>
-<h2 id="201-2026-08-05">[2.0.1] - 2026-08-05<a class="headerlink" href="#201-2026-08-05" title="Permanent link">&para;</a></h2>
+<h2 id="202-2026-10-31">[2.0.2] - 2026-10-31<a class="headerlink" href="#202-2026-10-31" title="Permanent link">&para;</a></h2>
 <h3 id="fixed">Fixed<a class="headerlink" href="#fixed" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Cache invalidation rules register once instead of twice. <code>auto_discover()</code> marked discovery finished before importing the cache modules, so every <code>@cache_result</code> rule was registered by its decorator on import and then again from the pending list. Each save on a watched model ran its invalidation set twice, and a rule declared with <code>rewarm=True</code> recomputed and reserialized its cached value twice per write.</li>
+</ul>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="c1"># one @cache_result rule, two registrations before this release</span>
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="n">CacheRegister</span><span class="o">.</span><span class="n">auto_discover</span><span class="p">()</span>
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="nb">len</span><span class="p">(</span><span class="n">CacheRegister</span><span class="o">.</span><span class="n">_rules</span><span class="p">)</span>  <span class="c1"># 2</span>
+</code></pre></div>
+<ul>
+<li><code>watch_fields</code> no longer ignores a plain <code>save()</code>. Django reports <code>update_fields=None</code> for a full save, meaning every column was written, and the registry read that as "none of the watched fields changed". A rule with <code>watch_fields</code> only invalidated for <code>save(update_fields=[...])</code>, so an ordinary save left its cached value in place for the rest of the entry's lifetime. A save that names no fields now invalidates, since any watched field may have changed.</li>
+</ul>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="n">InvalidationRule</span><span class="p">(</span><span class="n">model</span><span class="o">=</span><span class="n">User</span><span class="p">,</span> <span class="n">field_mapping</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;user_id&quot;</span><span class="p">:</span> <span class="s2">&quot;id&quot;</span><span class="p">},</span> <span class="n">watch_fields</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;email&quot;</span><span class="p">])</span>
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="n">user</span><span class="o">.</span><span class="n">email</span> <span class="o">=</span> <span class="s2">&quot;new@example.com&quot;</span>
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="n">user</span><span class="o">.</span><span class="n">save</span><span class="p">()</span>  <span class="c1"># cache kept the old value before this release</span>
+</code></pre></div>
+<h2 id="201-2026-08-05">[2.0.1] - 2026-08-05<a class="headerlink" href="#201-2026-08-05" title="Permanent link">&para;</a></h2>
+<h3 id="fixed_1">Fixed<a class="headerlink" href="#fixed_1" title="Permanent link">&para;</a></h3>
 <ul>
 <li>Naming a restflow subclass in a DRF setting no longer breaks Django startup. <code>restflow.permissions</code>, <code>restflow.throttling</code>, <code>restflow.pagination</code>, and <code>restflow.exceptions</code> imported <code>rest_framework.views</code> at module scope. DRF evaluates <code>DEFAULT_AUTHENTICATION_CLASSES</code>, <code>DEFAULT_PERMISSION_CLASSES</code>, and <code>DEFAULT_THROTTLE_CLASSES</code> while <code>rest_framework.views</code> is still initialising, so importing a module that reached back into it raised <code>ImportError: cannot import name 'APIView' from partially initialized module</code>. No import ordering in the project could avoid it. The annotation-only imports now live behind <code>TYPE_CHECKING</code> and the exception handler resolves DRF's handler at call time.</li>
 </ul>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="c1"># settings.py, previously unusable on 2.0.0</span>
-<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="n">REST_FRAMEWORK</span> <span class="o">=</span> <span class="p">{</span>
-<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>    <span class="s2">&quot;DEFAULT_PERMISSION_CLASSES&quot;</span><span class="p">:</span> <span class="p">[</span><span class="s2">&quot;myapp.permissions.IsApiKeyAuthenticated&quot;</span><span class="p">],</span>
-<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="p">}</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="c1"># settings.py, previously unusable on 2.0.0</span>
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="n">REST_FRAMEWORK</span> <span class="o">=</span> <span class="p">{</span>
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>    <span class="s2">&quot;DEFAULT_PERMISSION_CLASSES&quot;</span><span class="p">:</span> <span class="p">[</span><span class="s2">&quot;myapp.permissions.IsApiKeyAuthenticated&quot;</span><span class="p">],</span>
+<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="p">}</span>
 </code></pre></div>
 <ul>
 <li>
@@ -5634,8 +5707,8 @@ and this project adheres to <a href="https://semver.org/spec/v2.0.0.html">Semant
 <ul>
 <li><code>FilterSet.filter_queryset</code> and <code>afilter_queryset</code> are typed with a type variable bound to the queryset, so the return value keeps the caller's model instead of widening to a bare <code>QuerySet</code>. <code>ignore</code> is annotated as an optional list of field names and <code>data</code> as an optional mapping.</li>
 </ul>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="n">qs</span> <span class="o">=</span> <span class="n">ProductFilterSet</span><span class="p">(</span><span class="n">request</span><span class="o">=</span><span class="n">request</span><span class="p">)</span><span class="o">.</span><span class="n">filter_queryset</span><span class="p">(</span><span class="n">Product</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">all</span><span class="p">())</span>
-<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="c1"># QuerySet[Product] instead of QuerySet[Unknown]</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="n">qs</span> <span class="o">=</span> <span class="n">ProductFilterSet</span><span class="p">(</span><span class="n">request</span><span class="o">=</span><span class="n">request</span><span class="p">)</span><span class="o">.</span><span class="n">filter_queryset</span><span class="p">(</span><span class="n">Product</span><span class="o">.</span><span class="n">objects</span><span class="o">.</span><span class="n">all</span><span class="p">())</span>
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="c1"># QuerySet[Product] instead of QuerySet[Unknown]</span>
 </code></pre></div>
 <ul>
 <li>Instantiating a <code>FilterSet</code> subclass reports the subclass to type checkers, and editor go-to-definition on the call lands on <code>FilterSet</code> rather than the metaclass.</li>
@@ -5645,16 +5718,16 @@ and this project adheres to <a href="https://semver.org/spec/v2.0.0.html">Semant
 <ul>
 <li>BREAKING: <code>cache_if</code> and <code>cache_unless</code> now receive <code>(result, *args, **kwargs)</code> instead of just the result. The predicates are called with the function's return value followed by the call arguments, matching the new callable <code>ttl</code>. A predicate written for an earlier release that accepts only the result must add <code>*args, **kwargs</code>. The same applies to <code>cache_response</code>, where the first argument is the rendered response.</li>
 </ul>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="c1"># before</span>
-<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="nd">@cache_result</span><span class="p">(</span><span class="n">UserKey</span><span class="p">,</span> <span class="n">ttl</span><span class="o">=</span><span class="mi">300</span><span class="p">,</span> <span class="n">cache_if</span><span class="o">=</span><span class="k">lambda</span> <span class="n">result</span><span class="p">:</span> <span class="n">result</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">)</span>
-<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="k">def</span><span class="w"> </span><span class="nf">get_profile</span><span class="p">(</span><span class="n">user_id</span><span class="p">):</span> <span class="o">...</span>
-<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>
-<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="c1"># after</span>
-<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="nd">@cache_result</span><span class="p">(</span>
-<a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a>    <span class="n">UserKey</span><span class="p">,</span> <span class="n">ttl</span><span class="o">=</span><span class="mi">300</span><span class="p">,</span>
-<a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a>    <span class="n">cache_if</span><span class="o">=</span><span class="k">lambda</span> <span class="n">result</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">:</span> <span class="n">result</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">,</span>
-<a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a><span class="p">)</span>
-<a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a><span class="k">def</span><span class="w"> </span><span class="nf">get_profile</span><span class="p">(</span><span class="n">user_id</span><span class="p">):</span> <span class="o">...</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="c1"># before</span>
+<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="nd">@cache_result</span><span class="p">(</span><span class="n">UserKey</span><span class="p">,</span> <span class="n">ttl</span><span class="o">=</span><span class="mi">300</span><span class="p">,</span> <span class="n">cache_if</span><span class="o">=</span><span class="k">lambda</span> <span class="n">result</span><span class="p">:</span> <span class="n">result</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">)</span>
+<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="k">def</span><span class="w"> </span><span class="nf">get_profile</span><span class="p">(</span><span class="n">user_id</span><span class="p">):</span> <span class="o">...</span>
+<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a>
+<a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a><span class="c1"># after</span>
+<a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a><span class="nd">@cache_result</span><span class="p">(</span>
+<a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a>    <span class="n">UserKey</span><span class="p">,</span> <span class="n">ttl</span><span class="o">=</span><span class="mi">300</span><span class="p">,</span>
+<a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a>    <span class="n">cache_if</span><span class="o">=</span><span class="k">lambda</span> <span class="n">result</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">:</span> <span class="n">result</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">,</span>
+<a id="__codelineno-4-9" name="__codelineno-4-9" href="#__codelineno-4-9"></a><span class="p">)</span>
+<a id="__codelineno-4-10" name="__codelineno-4-10" href="#__codelineno-4-10"></a><span class="k">def</span><span class="w"> </span><span class="nf">get_profile</span><span class="p">(</span><span class="n">user_id</span><span class="p">):</span> <span class="o">...</span>
 </code></pre></div>
 <h3 id="added">Added<a class="headerlink" href="#added" title="Permanent link">&para;</a></h3>
 <ul>
@@ -5665,27 +5738,27 @@ and this project adheres to <a href="https://semver.org/spec/v2.0.0.html">Semant
 <p><code>ttl</code> on <code>cache_result</code> and <code>cache_response</code> accepts a callable that computes the time-to-live per call. It runs on a cache miss, right before the write, and receives <code>(result, *args, **kwargs)</code>. Return an int number of seconds, or <code>None</code> to cache without expiry. On an async target the callable may be <code>async def</code>.</p>
 </li>
 </ul>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="nd">@cache_result</span><span class="p">(</span>
-<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>    <span class="n">UserKey</span><span class="p">,</span>
-<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>    <span class="n">ttl</span><span class="o">=</span><span class="k">lambda</span> <span class="n">result</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">:</span> <span class="mi">60</span> <span class="k">if</span> <span class="ow">not</span> <span class="n">result</span> <span class="k">else</span> <span class="mi">3600</span><span class="p">,</span>
-<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="p">)</span>
-<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="k">def</span><span class="w"> </span><span class="nf">get_report</span><span class="p">(</span><span class="n">brand_id</span><span class="p">,</span> <span class="n">month</span><span class="p">):</span>
-<a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a>    <span class="k">return</span> <span class="n">build_report</span><span class="p">(</span><span class="n">brand_id</span><span class="p">,</span> <span class="n">month</span><span class="p">)</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="nd">@cache_result</span><span class="p">(</span>
+<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>    <span class="n">UserKey</span><span class="p">,</span>
+<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>    <span class="n">ttl</span><span class="o">=</span><span class="k">lambda</span> <span class="n">result</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">:</span> <span class="mi">60</span> <span class="k">if</span> <span class="ow">not</span> <span class="n">result</span> <span class="k">else</span> <span class="mi">3600</span><span class="p">,</span>
+<a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="p">)</span>
+<a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a><span class="k">def</span><span class="w"> </span><span class="nf">get_report</span><span class="p">(</span><span class="n">brand_id</span><span class="p">,</span> <span class="n">month</span><span class="p">):</span>
+<a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a>    <span class="k">return</span> <span class="n">build_report</span><span class="p">(</span><span class="n">brand_id</span><span class="p">,</span> <span class="n">month</span><span class="p">)</span>
 </code></pre></div>
 <ul>
 <li>A decorated function exposes <code>.func</code>, the undecorated target typed with its original signature. Calling it runs the function directly and skips the cache, so it doubles as an escape hatch and as the function object to pass around or introspect. The stdlib <code>__wrapped__</code> attribute that <code>functools.wraps</code> already sets is now declared with the same type.</li>
 </ul>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="nd">@cache_result</span><span class="p">(</span><span class="n">UserKey</span><span class="p">,</span> <span class="n">ttl</span><span class="o">=</span><span class="mi">300</span><span class="p">)</span>
-<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="k">def</span><span class="w"> </span><span class="nf">get_profile</span><span class="p">(</span><span class="n">user_id</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Profile</span><span class="p">:</span> <span class="o">...</span>
-<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>
-<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="n">get_profile</span><span class="o">.</span><span class="n">func</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>   <span class="c1"># uncached call, typed (user_id: int) -&gt; Profile</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="nd">@cache_result</span><span class="p">(</span><span class="n">UserKey</span><span class="p">,</span> <span class="n">ttl</span><span class="o">=</span><span class="mi">300</span><span class="p">)</span>
+<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="k">def</span><span class="w"> </span><span class="nf">get_profile</span><span class="p">(</span><span class="n">user_id</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Profile</span><span class="p">:</span> <span class="o">...</span>
+<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a>
+<a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a><span class="n">get_profile</span><span class="o">.</span><span class="n">func</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>   <span class="c1"># uncached call, typed (user_id: int) -&gt; Profile</span>
 </code></pre></div>
 <ul>
 <li><code>filterset_schema_methods</code> controls which HTTP methods expose a view's filterset parameters in the OpenAPI schema. <code>RestflowAutoSchema</code> injects filter parameters for every method of a view that declares <code>filterset_class</code>, including <code>POST</code>, <code>PUT</code>, and <code>PATCH</code>. Set <code>filterset_schema_methods</code> on the view to limit them to specific methods (case-insensitive), or set <code>SCHEMA.FILTER_METHODS</code> in <code>RESTFLOW_SETTINGS</code> for a project-wide default. A per-view attribute overrides the setting, and <code>None</code> means every method. The default is unchanged, so existing schemas keep filter parameters on every method.</li>
 </ul>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="k">class</span><span class="w"> </span><span class="nc">ProductView</span><span class="p">(</span><span class="n">AsyncModelViewSet</span><span class="p">):</span>
-<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>    <span class="n">filterset_class</span> <span class="o">=</span> <span class="n">ProductFilterSet</span>
-<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>    <span class="n">filterset_schema_methods</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;GET&quot;</span><span class="p">]</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="k">class</span><span class="w"> </span><span class="nc">ProductView</span><span class="p">(</span><span class="n">AsyncModelViewSet</span><span class="p">):</span>
+<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a>    <span class="n">filterset_class</span> <span class="o">=</span> <span class="n">ProductFilterSet</span>
+<a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a>    <span class="n">filterset_schema_methods</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;GET&quot;</span><span class="p">]</span>
 </code></pre></div>
 <ul>
 <li>
@@ -5700,34 +5773,34 @@ and this project adheres to <a href="https://semver.org/spec/v2.0.0.html">Semant
 <ul>
 <li><code>cache_result</code> now reports the wrapped callable's return type to type checkers. The decorator picks <code>SyncCachedWrapper</code> for a plain function and <code>AsyncCachedWrapper</code> for a coroutine function, so calling a cached sync function is typed as its return value and calling a cached async function is typed as a coroutine to await. Both classes are re-exported from <code>restflow.caching</code>. Runtime behavior is unchanged, this only sharpens the static types.</li>
 </ul>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="nd">@cache_result</span><span class="p">(</span><span class="n">UserKey</span><span class="p">,</span> <span class="n">ttl</span><span class="o">=</span><span class="mi">300</span><span class="p">)</span>
-<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="k">def</span><span class="w"> </span><span class="nf">get_profile</span><span class="p">(</span><span class="n">user_id</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Profile</span><span class="p">:</span> <span class="o">...</span>
-<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a>
-<a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a><span class="nd">@cache_result</span><span class="p">(</span><span class="n">UserKey</span><span class="p">,</span> <span class="n">ttl</span><span class="o">=</span><span class="mi">300</span><span class="p">)</span>
-<a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a><span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">aget_profile</span><span class="p">(</span><span class="n">user_id</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Profile</span><span class="p">:</span> <span class="o">...</span>
-<a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a>
-<a id="__codelineno-6-7" name="__codelineno-6-7" href="#__codelineno-6-7"></a><span class="n">reveal_type</span><span class="p">(</span><span class="n">get_profile</span><span class="p">(</span><span class="mi">1</span><span class="p">))</span>   <span class="c1"># Profile</span>
-<a id="__codelineno-6-8" name="__codelineno-6-8" href="#__codelineno-6-8"></a><span class="n">reveal_type</span><span class="p">(</span><span class="n">aget_profile</span><span class="p">(</span><span class="mi">1</span><span class="p">))</span>  <span class="c1"># Coroutine[Any, Any, Profile]</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="nd">@cache_result</span><span class="p">(</span><span class="n">UserKey</span><span class="p">,</span> <span class="n">ttl</span><span class="o">=</span><span class="mi">300</span><span class="p">)</span>
+<a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a><span class="k">def</span><span class="w"> </span><span class="nf">get_profile</span><span class="p">(</span><span class="n">user_id</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Profile</span><span class="p">:</span> <span class="o">...</span>
+<a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a>
+<a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a><span class="nd">@cache_result</span><span class="p">(</span><span class="n">UserKey</span><span class="p">,</span> <span class="n">ttl</span><span class="o">=</span><span class="mi">300</span><span class="p">)</span>
+<a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a><span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">aget_profile</span><span class="p">(</span><span class="n">user_id</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Profile</span><span class="p">:</span> <span class="o">...</span>
+<a id="__codelineno-8-6" name="__codelineno-8-6" href="#__codelineno-8-6"></a>
+<a id="__codelineno-8-7" name="__codelineno-8-7" href="#__codelineno-8-7"></a><span class="n">reveal_type</span><span class="p">(</span><span class="n">get_profile</span><span class="p">(</span><span class="mi">1</span><span class="p">))</span>   <span class="c1"># Profile</span>
+<a id="__codelineno-8-8" name="__codelineno-8-8" href="#__codelineno-8-8"></a><span class="n">reveal_type</span><span class="p">(</span><span class="n">aget_profile</span><span class="p">(</span><span class="mi">1</span><span class="p">))</span>  <span class="c1"># Coroutine[Any, Any, Profile]</span>
 </code></pre></div>
 <h2 id="140-2026-06-20">[1.4.0] - 2026-06-20<a class="headerlink" href="#140-2026-06-20" title="Permanent link">&para;</a></h2>
 <h3 id="added_2">Added<a class="headerlink" href="#added_2" title="Permanent link">&para;</a></h3>
 <ul>
 <li><code>KeyConstructor.wipe()</code> invalidates the cache for every function that shares a constructor in one call. <code>delete_by_prefix()</code> and <code>invalidate_all()</code> act on a single wrapped function, while the constructor keeps a list of the functions decorated with it and fans the same invalidation out across all of them. Arguments bind to each function's signature like a normal call, so <code>wipe(user_id=42)</code> drops that partition everywhere and a bare <code>wipe()</code> clears every partition. Use <code>awipe()</code> for async functions. A function joins the set when its <code>@cache_result</code> or <code>@cache_response</code> decorator runs at import time, and the call needs a redis-compatible backend that implements <code>delete_pattern</code>.</li>
 </ul>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="k">class</span><span class="w"> </span><span class="nc">UserDataKey</span><span class="p">(</span><span class="n">KeyConstructor</span><span class="p">):</span>
-<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a>    <span class="n">user</span> <span class="o">=</span> <span class="n">ArgsKeyField</span><span class="p">(</span><span class="s2">&quot;user_id&quot;</span><span class="p">,</span> <span class="n">partition</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
-<a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a>
-<a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a>    <span class="k">class</span><span class="w"> </span><span class="nc">Meta</span><span class="p">:</span>
-<a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a>        <span class="n">namespace</span> <span class="o">=</span> <span class="s2">&quot;user_data&quot;</span>
-<a id="__codelineno-7-6" name="__codelineno-7-6" href="#__codelineno-7-6"></a>
-<a id="__codelineno-7-7" name="__codelineno-7-7" href="#__codelineno-7-7"></a><span class="nd">@cache_result</span><span class="p">(</span><span class="n">UserDataKey</span><span class="p">,</span> <span class="n">ttl</span><span class="o">=</span><span class="mi">300</span><span class="p">)</span>
-<a id="__codelineno-7-8" name="__codelineno-7-8" href="#__codelineno-7-8"></a><span class="k">def</span><span class="w"> </span><span class="nf">get_profile</span><span class="p">(</span><span class="n">user_id</span><span class="p">):</span> <span class="o">...</span>
-<a id="__codelineno-7-9" name="__codelineno-7-9" href="#__codelineno-7-9"></a>
-<a id="__codelineno-7-10" name="__codelineno-7-10" href="#__codelineno-7-10"></a><span class="nd">@cache_result</span><span class="p">(</span><span class="n">UserDataKey</span><span class="p">,</span> <span class="n">ttl</span><span class="o">=</span><span class="mi">300</span><span class="p">)</span>
-<a id="__codelineno-7-11" name="__codelineno-7-11" href="#__codelineno-7-11"></a><span class="k">def</span><span class="w"> </span><span class="nf">get_settings</span><span class="p">(</span><span class="n">user_id</span><span class="p">):</span> <span class="o">...</span>
-<a id="__codelineno-7-12" name="__codelineno-7-12" href="#__codelineno-7-12"></a>
-<a id="__codelineno-7-13" name="__codelineno-7-13" href="#__codelineno-7-13"></a><span class="n">UserDataKey</span><span class="o">.</span><span class="n">wipe</span><span class="p">(</span><span class="n">user_id</span><span class="o">=</span><span class="mi">42</span><span class="p">)</span>  <span class="c1"># drops user 42 on both functions</span>
-<a id="__codelineno-7-14" name="__codelineno-7-14" href="#__codelineno-7-14"></a><span class="n">UserDataKey</span><span class="o">.</span><span class="n">wipe</span><span class="p">()</span>            <span class="c1"># drops every entry both functions wrote</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="k">class</span><span class="w"> </span><span class="nc">UserDataKey</span><span class="p">(</span><span class="n">KeyConstructor</span><span class="p">):</span>
+<a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a>    <span class="n">user</span> <span class="o">=</span> <span class="n">ArgsKeyField</span><span class="p">(</span><span class="s2">&quot;user_id&quot;</span><span class="p">,</span> <span class="n">partition</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a>
+<a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a>    <span class="k">class</span><span class="w"> </span><span class="nc">Meta</span><span class="p">:</span>
+<a id="__codelineno-9-5" name="__codelineno-9-5" href="#__codelineno-9-5"></a>        <span class="n">namespace</span> <span class="o">=</span> <span class="s2">&quot;user_data&quot;</span>
+<a id="__codelineno-9-6" name="__codelineno-9-6" href="#__codelineno-9-6"></a>
+<a id="__codelineno-9-7" name="__codelineno-9-7" href="#__codelineno-9-7"></a><span class="nd">@cache_result</span><span class="p">(</span><span class="n">UserDataKey</span><span class="p">,</span> <span class="n">ttl</span><span class="o">=</span><span class="mi">300</span><span class="p">)</span>
+<a id="__codelineno-9-8" name="__codelineno-9-8" href="#__codelineno-9-8"></a><span class="k">def</span><span class="w"> </span><span class="nf">get_profile</span><span class="p">(</span><span class="n">user_id</span><span class="p">):</span> <span class="o">...</span>
+<a id="__codelineno-9-9" name="__codelineno-9-9" href="#__codelineno-9-9"></a>
+<a id="__codelineno-9-10" name="__codelineno-9-10" href="#__codelineno-9-10"></a><span class="nd">@cache_result</span><span class="p">(</span><span class="n">UserDataKey</span><span class="p">,</span> <span class="n">ttl</span><span class="o">=</span><span class="mi">300</span><span class="p">)</span>
+<a id="__codelineno-9-11" name="__codelineno-9-11" href="#__codelineno-9-11"></a><span class="k">def</span><span class="w"> </span><span class="nf">get_settings</span><span class="p">(</span><span class="n">user_id</span><span class="p">):</span> <span class="o">...</span>
+<a id="__codelineno-9-12" name="__codelineno-9-12" href="#__codelineno-9-12"></a>
+<a id="__codelineno-9-13" name="__codelineno-9-13" href="#__codelineno-9-13"></a><span class="n">UserDataKey</span><span class="o">.</span><span class="n">wipe</span><span class="p">(</span><span class="n">user_id</span><span class="o">=</span><span class="mi">42</span><span class="p">)</span>  <span class="c1"># drops user 42 on both functions</span>
+<a id="__codelineno-9-14" name="__codelineno-9-14" href="#__codelineno-9-14"></a><span class="n">UserDataKey</span><span class="o">.</span><span class="n">wipe</span><span class="p">()</span>            <span class="c1"># drops every entry both functions wrote</span>
 </code></pre></div>
 <ul>
 <li><code>KeyConstructor.delete_previous_versions()</code> removes cache entries left behind by older versions of a constructor. Bumping <code>Meta.version</code> makes old entries unreachable but leaves the bytes in the backend until they expire. When the version is n above 1, this deletes versions 1 through n-1 across the namespace with <code>cache.delete_pattern</code>, leaving the live version n in place. A version of 1 is a no-op. The delete is scoped by namespace, so a constructor without one raises, and the backend must implement <code>delete_pattern</code>. Use <code>adelete_previous_versions()</code> in async contexts.</li>
@@ -5741,24 +5814,24 @@ and this project adheres to <a href="https://semver.org/spec/v2.0.0.html">Semant
 <ul>
 <li><code>NotRequired[T]</code> annotation marker for serializer fields. It sets <code>required=False</code> without touching <code>allow_null</code>, so a key may be left out of the input but must not be null when present. This complements <code>Optional[T]</code> / <code>T | None</code>, which mark a field both optional and nullable. The marker is re-exported from <code>restflow.serializers</code>, composes with the other forms (<code>NotRequired[T | None]</code> is optional and nullable), and an explicit <code>Field(required=True)</code> still takes precedence.</li>
 </ul>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">restflow.serializers</span><span class="w"> </span><span class="kn">import</span> <span class="n">NotRequired</span><span class="p">,</span> <span class="n">Serializer</span>
-<a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a>
-<a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a><span class="k">class</span><span class="w"> </span><span class="nc">SignupSer</span><span class="p">(</span><span class="n">Serializer</span><span class="p">):</span>
-<a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a>    <span class="n">email</span><span class="p">:</span> <span class="nb">str</span>
-<a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a>    <span class="n">nickname</span><span class="p">:</span> <span class="n">NotRequired</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span>         <span class="c1"># optional key, not nullable</span>
-<a id="__codelineno-8-6" name="__codelineno-8-6" href="#__codelineno-8-6"></a>    <span class="n">referral</span><span class="p">:</span> <span class="n">NotRequired</span><span class="p">[</span><span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span><span class="p">]</span>  <span class="c1"># optional key and nullable</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">restflow.serializers</span><span class="w"> </span><span class="kn">import</span> <span class="n">NotRequired</span><span class="p">,</span> <span class="n">Serializer</span>
+<a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a>
+<a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a><span class="k">class</span><span class="w"> </span><span class="nc">SignupSer</span><span class="p">(</span><span class="n">Serializer</span><span class="p">):</span>
+<a id="__codelineno-10-4" name="__codelineno-10-4" href="#__codelineno-10-4"></a>    <span class="n">email</span><span class="p">:</span> <span class="nb">str</span>
+<a id="__codelineno-10-5" name="__codelineno-10-5" href="#__codelineno-10-5"></a>    <span class="n">nickname</span><span class="p">:</span> <span class="n">NotRequired</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span>         <span class="c1"># optional key, not nullable</span>
+<a id="__codelineno-10-6" name="__codelineno-10-6" href="#__codelineno-10-6"></a>    <span class="n">referral</span><span class="p">:</span> <span class="n">NotRequired</span><span class="p">[</span><span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span><span class="p">]</span>  <span class="c1"># optional key and nullable</span>
 </code></pre></div>
 <ul>
 <li>Per-lookup help text for filter lookup variants. A lookup alias can map to a dict carrying the ORM <code>lookup</code> and an optional <code>help_text</code>, so each generated variant can describe itself in the OpenAPI schema.</li>
 </ul>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="k">class</span><span class="w"> </span><span class="nc">ProductFilter</span><span class="p">(</span><span class="n">FilterSet</span><span class="p">):</span>
-<a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a>    <span class="n">price</span> <span class="o">=</span> <span class="n">IntegerField</span><span class="p">(</span>
-<a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a>        <span class="n">help_text</span><span class="o">=</span><span class="s2">&quot;Product price&quot;</span><span class="p">,</span>
-<a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a>        <span class="n">lookups</span><span class="o">=</span><span class="p">{</span>
-<a id="__codelineno-9-5" name="__codelineno-9-5" href="#__codelineno-9-5"></a>            <span class="s2">&quot;min&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;lookup&quot;</span><span class="p">:</span> <span class="s2">&quot;gte&quot;</span><span class="p">,</span> <span class="s2">&quot;help_text&quot;</span><span class="p">:</span> <span class="s2">&quot;Minimum price&quot;</span><span class="p">},</span>
-<a id="__codelineno-9-6" name="__codelineno-9-6" href="#__codelineno-9-6"></a>            <span class="s2">&quot;max&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;lookup&quot;</span><span class="p">:</span> <span class="s2">&quot;lte&quot;</span><span class="p">},</span>
-<a id="__codelineno-9-7" name="__codelineno-9-7" href="#__codelineno-9-7"></a>        <span class="p">},</span>
-<a id="__codelineno-9-8" name="__codelineno-9-8" href="#__codelineno-9-8"></a>    <span class="p">)</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a><span class="k">class</span><span class="w"> </span><span class="nc">ProductFilter</span><span class="p">(</span><span class="n">FilterSet</span><span class="p">):</span>
+<a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a>    <span class="n">price</span> <span class="o">=</span> <span class="n">IntegerField</span><span class="p">(</span>
+<a id="__codelineno-11-3" name="__codelineno-11-3" href="#__codelineno-11-3"></a>        <span class="n">help_text</span><span class="o">=</span><span class="s2">&quot;Product price&quot;</span><span class="p">,</span>
+<a id="__codelineno-11-4" name="__codelineno-11-4" href="#__codelineno-11-4"></a>        <span class="n">lookups</span><span class="o">=</span><span class="p">{</span>
+<a id="__codelineno-11-5" name="__codelineno-11-5" href="#__codelineno-11-5"></a>            <span class="s2">&quot;min&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;lookup&quot;</span><span class="p">:</span> <span class="s2">&quot;gte&quot;</span><span class="p">,</span> <span class="s2">&quot;help_text&quot;</span><span class="p">:</span> <span class="s2">&quot;Minimum price&quot;</span><span class="p">},</span>
+<a id="__codelineno-11-6" name="__codelineno-11-6" href="#__codelineno-11-6"></a>            <span class="s2">&quot;max&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;lookup&quot;</span><span class="p">:</span> <span class="s2">&quot;lte&quot;</span><span class="p">},</span>
+<a id="__codelineno-11-7" name="__codelineno-11-7" href="#__codelineno-11-7"></a>        <span class="p">},</span>
+<a id="__codelineno-11-8" name="__codelineno-11-8" href="#__codelineno-11-8"></a>    <span class="p">)</span>
 </code></pre></div>
 <p>Each variant resolves its description in three steps. An explicit per-lookup <code>help_text</code> is used as is. Otherwise, when the parent field has a <code>help_text</code>, the variant gets "parent help (Bound Label)", for example "Product price (Inclusive Upper Bound)". Otherwise it falls back to an auto-generated verb hint. Negated (<code>!</code>) variants reuse the same description as "exclude where ...".</p>
 <h3 id="breaking">Breaking<a class="headerlink" href="#breaking" title="Permanent link">&para;</a></h3>
@@ -5802,11 +5875,11 @@ and this project adheres to <a href="https://semver.org/spec/v2.0.0.html">Semant
 <ul>
 <li><code>TokenObtainView</code>, <code>TokenRefreshView</code>, and <code>TokenBlacklistView</code> are no longer re-exported from <code>restflow.authentication</code>. Import them from <code>restflow.authentication.views</code> instead.</li>
 </ul>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="c1"># Before</span>
-<a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">restflow.authentication</span><span class="w"> </span><span class="kn">import</span> <span class="n">TokenObtainView</span><span class="p">,</span> <span class="n">TokenRefreshView</span><span class="p">,</span> <span class="n">TokenBlacklistView</span>
-<a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a>
-<a id="__codelineno-10-4" name="__codelineno-10-4" href="#__codelineno-10-4"></a><span class="c1"># After</span>
-<a id="__codelineno-10-5" name="__codelineno-10-5" href="#__codelineno-10-5"></a><span class="kn">from</span><span class="w"> </span><span class="nn">restflow.authentication.views</span><span class="w"> </span><span class="kn">import</span> <span class="n">TokenObtainView</span><span class="p">,</span> <span class="n">TokenRefreshView</span><span class="p">,</span> <span class="n">TokenBlacklistView</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a><span class="c1"># Before</span>
+<a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">restflow.authentication</span><span class="w"> </span><span class="kn">import</span> <span class="n">TokenObtainView</span><span class="p">,</span> <span class="n">TokenRefreshView</span><span class="p">,</span> <span class="n">TokenBlacklistView</span>
+<a id="__codelineno-12-3" name="__codelineno-12-3" href="#__codelineno-12-3"></a>
+<a id="__codelineno-12-4" name="__codelineno-12-4" href="#__codelineno-12-4"></a><span class="c1"># After</span>
+<a id="__codelineno-12-5" name="__codelineno-12-5" href="#__codelineno-12-5"></a><span class="kn">from</span><span class="w"> </span><span class="nn">restflow.authentication.views</span><span class="w"> </span><span class="kn">import</span> <span class="n">TokenObtainView</span><span class="p">,</span> <span class="n">TokenRefreshView</span><span class="p">,</span> <span class="n">TokenBlacklistView</span>
 </code></pre></div>
 <h2 id="101-2026-05-25">[1.0.1] - 2026-05-25<a class="headerlink" href="#101-2026-05-25" title="Permanent link">&para;</a></h2>
 <h3 id="fixes_4">Fixes<a class="headerlink" href="#fixes_4" title="Permanent link">&para;</a></h3>
