@@ -17,16 +17,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   len(CacheRegister._rules)  # 2
   ```
 
-- A view can name the serializer it works with, so an editor resolves it to your class instead of DRF's base. `serializer_class`, `get_serializer_class()` and `get_serializer()` were all typed as `BaseSerializer`, so go-to-definition on a serializer taken from a view landed inside restflow. `APIView` and `AsyncAPIView` take an optional serializer parameter, and a view left unparameterised keeps the previous types.
-
-  ```python
-  class ItemView(APIView[ItemSerializer]):
-      serializer_class = ItemSerializer
-
-      def get(self, request):
-          serializer = self.get_serializer()  # ItemSerializer
-  ```
-
 ## [2.0.1] - 2026-08-05
 
 ### Fixed

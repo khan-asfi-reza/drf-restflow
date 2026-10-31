@@ -46,7 +46,6 @@ dependencies = [
     "django>=3.2",
     "djangorestframework>=3.14",
     "pyjwt>=2.8",
-    "typing-extensions>=4.4",
 ]
 
 [project.optional-dependencies]
