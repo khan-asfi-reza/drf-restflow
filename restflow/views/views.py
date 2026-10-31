@@ -1,4 +1,4 @@
-from typing import TYPE_CHECKING, Any, Protocol, cast
+from typing import TYPE_CHECKING, Any, Generic, Protocol, cast
 
 from asgiref.sync import sync_to_async
 from django.core.exceptions import ImproperlyConfigured
@@ -10,6 +10,7 @@ from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.serializers import BaseSerializer
 from rest_framework.views import APIView as DRFAPIView
+from typing_extensions import TypeVar
 
 from restflow.helpers import maybe_await
 from restflow.permissions import has_object_permission, has_permission
@@ -28,6 +29,11 @@ if TYPE_CHECKING:
         def _not_authenticated(self) -> None: ...
 else:
     _HelpersBase = object
+
+
+SerializerT = TypeVar(
+    "SerializerT", bound=BaseSerializer[Any], default=BaseSerializer[Any]
+)
 
 
 def perform_post_fetches(
@@ -76,11 +82,11 @@ def _no_actions(_request: Any, _view: Any) -> dict[str, Any]:
     return {}
 
 
-class APIViewHelpersMixin(_HelpersBase):
+class APIViewHelpersMixin(Generic[SerializerT], _HelpersBase):
 
-    serializer_class: type[BaseSerializer[Any]] | None = None
-    request_serializer_class: type[BaseSerializer[Any]] | None = None
-    response_serializer_class: type[BaseSerializer[Any]] | None = None
+    serializer_class: type[SerializerT] | None = None
+    request_serializer_class: type[SerializerT] | None = None
+    response_serializer_class: type[SerializerT] | None = None
     pagination_class: type[BasePagination] | None = None
 
     def get_context(self) -> dict[str, Any]:
@@ -89,19 +95,19 @@ class APIViewHelpersMixin(_HelpersBase):
         """
         return {"request": self.request, "view": self}
 
-    def get_serializer_class(self) -> type[BaseSerializer[Any]]:
+    def get_serializer_class(self) -> type[SerializerT]:
         """
         Returns the class used to serialize the response payload.
         """
-        return cast("type[BaseSerializer[Any]]", self.serializer_class)
+        return cast("type[SerializerT]", self.serializer_class)
 
-    def get_request_serializer_class(self) -> type[BaseSerializer[Any]]:
+    def get_request_serializer_class(self) -> type[SerializerT]:
         """
         Returns the class used to validate the request body.
         """
         return self.request_serializer_class or self.get_serializer_class()
 
-    def get_response_serializer_class(self) -> type[BaseSerializer[Any]]:
+    def get_response_serializer_class(self) -> type[SerializerT]:
         """
         Returns the class used to serialize the response payload.
         """
@@ -119,7 +125,7 @@ class APIViewHelpersMixin(_HelpersBase):
         serializer_class: type[BaseSerializer[Any]] | None = None,
         direction: str | None = None,
         **kwargs: Any,
-    ) -> BaseSerializer[Any]:
+    ) -> SerializerT:
         """
         Returns the serializer instance that should be used for the action.
         """
@@ -137,7 +143,7 @@ class APIViewHelpersMixin(_HelpersBase):
             )
             raise ImproperlyConfigured(msg)
         kwargs.setdefault("context", self.get_context())
-        return serializer_class(*args, **kwargs)
+        return cast("SerializerT", serializer_class(*args, **kwargs))
 
     def validated_serializer(
         self,
@@ -245,7 +251,7 @@ class APIViewHelpersMixin(_HelpersBase):
 
 
 
-class APIView(APIViewHelpersMixin, DRFAPIView):
+class APIView(APIViewHelpersMixin[SerializerT], DRFAPIView):
 
     def options(
         self, request: Request, *args: Any, **kwargs: Any
@@ -260,7 +266,7 @@ class APIView(APIViewHelpersMixin, DRFAPIView):
             self.build_options_metadata(request), status=status.HTTP_200_OK
         )
 
-class AsyncAPIView(APIViewHelpersMixin, DRFAPIView):
+class AsyncAPIView(APIViewHelpersMixin[SerializerT], DRFAPIView):
 
     @classproperty
     def view_is_async(cls):  # noqa: N805  # pyright: ignore[reportIncompatibleVariableOverride]

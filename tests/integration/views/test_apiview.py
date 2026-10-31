@@ -236,3 +236,31 @@ def test_paginated_response_returns_unpaginated_when_paginator_returns_none():
     response = view.paginated_response(items)
     assert response.status_code == 200
     assert len(response.data) == 2
+
+
+def test_parameterised_view_builds_its_declared_serializer():
+    class TypedView(APIView[_ItemSerializer]):
+        serializer_class = _ItemSerializer
+
+    view = _bind(TypedView)
+
+    assert isinstance(view.get_serializer(), _ItemSerializer)
+    assert view.get_serializer_class() is _ItemSerializer
+
+
+def test_unparameterised_view_still_builds_its_serializer():
+    class PlainView(APIView):
+        serializer_class = _ItemSerializer
+
+    view = _bind(PlainView)
+
+    assert isinstance(view.get_serializer(), _ItemSerializer)
+
+
+def test_parameterised_view_keeps_the_serializer_class_override():
+    class TypedView(APIView[_ItemSerializer]):
+        serializer_class = _ItemSerializer
+
+    view = _bind(TypedView)
+
+    assert isinstance(view.get_serializer(serializer_class=_AltSerializer), _AltSerializer)
