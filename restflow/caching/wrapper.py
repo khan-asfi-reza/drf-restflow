@@ -1,4 +1,4 @@
-import datetime
+import datetime as dt
 import inspect
 from collections.abc import Awaitable, Callable, Coroutine
 from contextlib import suppress
@@ -162,7 +162,7 @@ class CachedWrapper(Generic[P, T]):
         with suppress(Exception):
             reset_at = (
                 (
-                    timezone.now() + datetime.timedelta(seconds=timeout)
+                    timezone.now() + dt.timedelta(seconds=timeout)
                 ).isoformat()
                 if timeout
                 else None
