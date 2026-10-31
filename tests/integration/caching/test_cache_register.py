@@ -1166,7 +1166,7 @@ class TestWatchFields:
             user.save(update_fields=["email"])
             mock_apply.assert_called_once()
 
-    def test_save_without_update_fields_does_not_invalidate_a_watched_rule(self):
+    def test_save_without_update_fields_invalidates_a_watched_rule(self):
         User = get_user_model()
 
         @cache_result(
@@ -1189,10 +1189,10 @@ class TestWatchFields:
         with patch.object(CacheRegister, "process_rule") as mock_apply:
             user.email = "changed@x.com"
             user.save()
-            mock_apply.assert_not_called()
+            mock_apply.assert_called_once()
 
-    def test_has_watched_field_changed_returns_false_without_update_fields(self):
-        assert CacheRegister._has_watched_field_changed(["email"]) is False
+    def test_has_watched_field_changed_is_true_without_update_fields(self):
+        assert CacheRegister._has_watched_field_changed(["email"]) is True
 
     def test_empty_or_none_watch_fields_means_always_invalidate(self):
         assert (
@@ -1249,8 +1249,8 @@ class TestWatchFields:
 
         user.email = "later@example.com"
         user.save()
-        assert get_user_label(user.id) == "label-2"
-        assert calls["n"] == 2
+        assert get_user_label(user.id) == "label-3"
+        assert calls["n"] == 3
 
 
 class TestImportCacheModules:

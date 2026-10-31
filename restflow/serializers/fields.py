@@ -1,4 +1,4 @@
-import datetime
+import datetime as dt
 import decimal
 import inspect
 import uuid
@@ -76,10 +76,10 @@ SerializerFieldMap: dict[Any, type[drf_fields.Field]] = {
     str: drf_fields.CharField,
     bool: drf_fields.BooleanField,
     bytes: drf_fields.CharField,
-    datetime.datetime: drf_fields.DateTimeField,
-    datetime.date: drf_fields.DateField,
-    datetime.time: drf_fields.TimeField,
-    datetime.timedelta: drf_fields.DurationField,
+    dt.datetime: drf_fields.DateTimeField,
+    dt.date: drf_fields.DateField,
+    dt.time: drf_fields.TimeField,
+    dt.timedelta: drf_fields.DurationField,
     decimal.Decimal: DecimalField,
     uuid.UUID: drf_fields.UUIDField,
     Email: drf_fields.EmailField,

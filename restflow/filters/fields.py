@@ -1,4 +1,4 @@
-import datetime
+import datetime as dt
 import decimal
 import inspect
 from collections.abc import Awaitable, Callable
@@ -944,10 +944,10 @@ DataTypeSerializerMap: dict[Any, type[Field]] = {
     float: FloatField,
     str: StringField,
     bool: BooleanField,
-    datetime.datetime: DateTimeField,
-    datetime.date: DateField,
-    datetime.time: TimeField,
-    datetime.timedelta: DurationField,
+    dt.datetime: DateTimeField,
+    dt.date: DateField,
+    dt.time: TimeField,
+    dt.timedelta: DurationField,
     decimal.Decimal: DecimalField,
     Email: EmailField,
     IPAddress: IPAddressField,

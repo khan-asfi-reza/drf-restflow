@@ -1,4 +1,4 @@
-import datetime
+import datetime as dt
 import inspect
 from abc import ABC, abstractmethod
 from collections.abc import Callable
@@ -75,7 +75,7 @@ class CacheKeyField(ABC):
             return sorted(canonicalized) if self.sort_lists else canonicalized
         if data is None:
             return "null"
-        if isinstance(data, (datetime.date, datetime.datetime)):
+        if isinstance(data, (dt.date, dt.datetime)):
             # Date type objects converted to iso format for consistency
             return data.isoformat()
         return str(data)
@@ -98,7 +98,10 @@ class CacheKeyField(ABC):
         elif isinstance(value, (list, tuple)):
             # List items are joined by comma `,`
             # For example: [1, 2, 3] -> "1,2,3"
-            canonical = self.normalize([self.stringify(v) for v in value])
+            canonical = cast(
+                "list[str]",
+                self.normalize([self.stringify(v) for v in value]),
+            )
             string = ",".join(canonical)
 
         else:

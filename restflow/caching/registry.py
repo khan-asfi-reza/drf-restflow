@@ -100,10 +100,10 @@ class CacheRegistry:
             "invalidation_rule": invalidation_rule,
         }
 
-        self._pending.append(config)
-
         if self._discovered:
             self._register(config)
+        else:
+            self._pending.append(config)
 
     def register(
         self,
@@ -149,7 +149,7 @@ class CacheRegistry:
 
         logger.info(
             f"Cache rule '{self.name}': "
-            f"{len(self._pending)} functions, "
+            f"{len(self._rules)} functions, "
             f"{len(self._connected_models)} models"
         )
         self._pending.clear()
@@ -369,10 +369,10 @@ class CacheRegistry:
         if not watch_fields:
             return True
 
-        if update_fields is not None:
-            return bool(set(watch_fields) & update_fields)
+        if update_fields is None:
+            return True
 
-        return False
+        return bool(set(watch_fields) & update_fields)
 
     def invalidate_for_instance(
         self,
