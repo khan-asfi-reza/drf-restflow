@@ -369,10 +369,10 @@ class CacheRegistry:
         if not watch_fields:
             return True
 
-        if update_fields is not None:
-            return bool(set(watch_fields) & update_fields)
+        if update_fields is None:
+            return True
 
-        return False
+        return bool(set(watch_fields) & update_fields)
 
     def invalidate_for_instance(
         self,

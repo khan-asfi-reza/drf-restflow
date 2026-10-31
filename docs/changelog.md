@@ -17,6 +17,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   len(CacheRegister._rules)  # 2
   ```
 
+- `watch_fields` no longer ignores a plain `save()`. Django reports `update_fields=None` for a full save, meaning every column was written, and the registry read that as "none of the watched fields changed". A rule with `watch_fields` only invalidated for `save(update_fields=[...])`, so an ordinary save left its cached value in place for the rest of the entry's lifetime. A save that names no fields now invalidates, since any watched field may have changed.
+
+  ```python
+  InvalidationRule(model=User, field_mapping={"user_id": "id"}, watch_fields=["email"])
+
+  user.email = "new@example.com"
+  user.save()  # cache kept the old value before this release
+  ```
+
 ## [2.0.1] - 2026-08-05
 
 ### Fixed
